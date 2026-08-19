@@ -12,10 +12,10 @@ import base64
 from typing import Dict, Any, List, Optional
 
 # -----------------------------------------------------------------------------
-# 1. PAGE CONFIGURATION & CUSTOM CSS (Brand Colors: #712416 & #151827)
+# 1. PAGE CONFIGURATION & CUSTOM CSS (Brand Colors: #712416 & #f8fafc)
 # -----------------------------------------------------------------------------
 st.set_page_config(
-    page_title="Landscape Assesment",
+    page_title="Landscape Assessment",
     page_icon="",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -23,87 +23,113 @@ st.set_page_config(
 
 st.markdown("""
 <style>
-    /* Global Dark Theme */
+    /* Global Light Theme */
     .stApp {
-        background-color: #0b0f19;
-        color: #f8fafc;
+        background-color: #f8fafc;
+        color: #1e293b;
         font-family: 'Inter', sans-serif;
     }
     
-    /* Fix for Streamlit Light Mode inputs and text visibility */
+    /* Clean white sidebar */
     [data-testid="stSidebar"] {
-        background-color: #151827;
+        background-color: #ffffff;
+        border-right: 1px solid #e2e8f0;
     }
+    
+    /* Force typography to dark charcoal for maximum contrast */
     [data-testid="stMarkdownContainer"] p, 
     [data-testid="stMarkdownContainer"] h1, 
     [data-testid="stMarkdownContainer"] h2, 
     [data-testid="stMarkdownContainer"] h3,
-    .stSelectbox label {
-        color: #f8fafc !important;
+    .stSelectbox label,
+    .stToggle label {
+        color: #1e293b !important;
     }
     
-    /* Force selectbox and popovers to dark to prevent white-on-white text */
+    /* Professional Light Dropdowns */
     div[data-baseweb="select"] > div {
-        background-color: #1e293b !important;
-        color: #f8fafc !important;
-        border-color: #334155 !important;
+        background-color: #ffffff !important;
+        color: #1e293b !important;
+        border: 1px solid #cbd5e1 !important;
+        border-radius: 6px;
     }
     ul[data-baseweb="menu"] {
-        background-color: #1e293b !important;
+        background-color: #ffffff !important;
+        border: 1px solid #e2e8f0;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
     }
     li[data-baseweb="option"] {
-        color: #f8fafc !important;
+        color: #1e293b !important;
+    }
+    li[data-baseweb="option"]:hover {
+        background-color: #f1f5f9 !important;
     }
     
     /* Top Header Bar */
     .header-banner {
-        background: linear-gradient(90deg, #712416 0%, #54190F 100%);
-        border-bottom: 2px solid #8C2F1E;
-        padding: 12px 20px;
-        border-radius: 10px;
-        margin-bottom: 16px;
+        background: linear-gradient(90deg, #712416 0%, #9b2c1d 100%);
+        padding: 16px 24px;
+        border-radius: 8px;
+        margin-bottom: 24px;
         display: flex;
         justify-content: space-between;
         align-items: center;
-        box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+        box-shadow: 0 4px 12px rgba(113, 36, 22, 0.15);
     }
     
     .header-title {
         color: #ffffff;
-        font-size: 1.15rem;
+        font-size: 1.25rem;
         font-weight: 700;
         margin: 0;
     }
     .header-subtitle {
-        color: #fde68a;
-        font-size: 0.78rem;
-        margin: 0;
+        color: #f8fafc;
+        font-size: 0.85rem;
+        opacity: 0.95;
+        margin: 4px 0 0 0;
     }
 
-    /* Cards */
+    /* Light Metric Cards */
     .metric-card {
-        background: #151827;
-        border: 1px solid #712416;
-        border-radius: 10px;
-        padding: 14px;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-top: 3px solid #712416;
+        border-radius: 8px;
+        padding: 18px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.02);
     }
     
-    .metric-value {
-        font-size: 1.6rem;
+    .metric-label {
+        font-size: 0.75rem; 
+        color: #64748b; 
         font-weight: 700;
-        color: #fbbf24;
+        letter-spacing: 0.5px;
+        text-transform: uppercase;
     }
 
-    /* Tooltip / Badges */
+    .metric-value {
+        font-size: 1.8rem;
+        font-weight: 700;
+        color: #1e293b;
+        margin: 4px 0;
+    }
+    
+    .metric-desc {
+        font-size: 0.75rem; 
+        color: #94a3b8;
+    }
+
+    /* Badges */
     .badge-burgundy {
         background-color: #712416;
         color: #ffffff;
-        padding: 3px 8px;
+        padding: 4px 10px;
         border-radius: 6px;
         font-size: 0.75rem;
         font-weight: 600;
-        border: 1px solid #8C2F1E;
+        display: inline-block;
+        margin-bottom: 12px;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -125,14 +151,14 @@ LCAT_ELEMENTS = [
 
 ELEMENT_COLORS = {
     "Landform and topography": "#D89A2B",
-    "Hydrology": "#38bdf8",
-    "Land cover and Agriculture": "#4ade80",
-    "Cultural and historical features": "#f472b6",
-    "Visual and Sensory qualities": "#a78bfa",
-    "Wildlife and Biodiversity richness": "#fb923c",
-    "Infrastructure and Economic factors": "#94a3b8",
-    "Community and Governance": "#facc15",
-    "Unknown": "#ffffff"
+    "Hydrology": "#0284c7", # Deepened for light theme contrast
+    "Land cover and Agriculture": "#16a34a", # Deepened for light theme contrast
+    "Cultural and historical features": "#db2777", # Deepened for light theme contrast
+    "Visual and Sensory qualities": "#7c3aed", # Deepened for light theme contrast
+    "Wildlife and Biodiversity richness": "#ea580c", # Deepened for light theme contrast
+    "Infrastructure and Economic factors": "#64748b",
+    "Community and Governance": "#ca8a04", # Deepened for light theme contrast
+    "Unknown": "#cbd5e1"
 }
 
 DISTRICT_CENTERS = {
@@ -244,19 +270,19 @@ def load_data_from_folder() -> pd.DataFrame:
 
 def get_demand_color(demand: int) -> str:
     if demand <= 35:
-        return "#F3E3C1"
+        return "#fef08a" # Lighter amber
     elif demand <= 65:
-        return "#D99A38"
+        return "#f59e0b" # Deep amber
     elif demand <= 90:
-        return "#C85C3A"
-    return "#712416"
+        return "#ea580c" # Orange
+    return "#712416" # Brand burgundy
 
 
 # -----------------------------------------------------------------------------
 # 3. SIDEBAR & GEOGRAPHIC SELECTION
 # -----------------------------------------------------------------------------
 with st.sidebar:
-    st.markdown('<div class="badge-burgundy">#712416 CONTROLS</div>', unsafe_allow_html=True)
+    st.markdown('<div class="badge-burgundy">DASHBOARD CONTROLS</div>', unsafe_allow_html=True)
     st.subheader("Geographic Filters")
     
     df_villages = load_data_from_folder()
@@ -282,7 +308,7 @@ with st.sidebar:
     # Basemap Mode
     basemap_choice = st.selectbox(
         "Basemap Style",
-        ["CartoDB Dark", "CartoDB Positron (Light)", "OpenStreetMap"]
+        ["CartoDB Positron (Light)", "CartoDB Dark", "OpenStreetMap"]
     )
     
     st.markdown("---")
@@ -324,9 +350,6 @@ st.markdown(f"""
         <h1 class="header-title">Landscape Assessment Atlas</h1>
         <p class="header-subtitle">Climate Risk & Community Demand &nbsp;·&nbsp; {selected_state} › {selected_district}</p>
     </div>
-    <div>
-        <span class="badge-burgundy">PANTONE 181 C (#712416)</span>
-    </div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -343,27 +366,27 @@ t1_demands = filtered_df["tier1"].sum() if total_villages > 0 else 0
 with col1:
     st.markdown(f"""
     <div class="metric-card">
-        <div style="font-size:0.8rem; color:#94a3b8; font-weight:600;">ACTIVE VILLAGES</div>
+        <div class="metric-label">ACTIVE VILLAGES</div>
         <div class="metric-value">{total_villages}</div>
-        <div style="font-size:0.75rem; color:#cbd5e1;">Covered Gram Panchayats</div>
+        <div class="metric-desc">Covered Gram Panchayats</div>
     </div>
     """, unsafe_allow_html=True)
 
 with col2:
     st.markdown(f"""
     <div class="metric-card">
-        <div style="font-size:0.8rem; color:#94a3b8; font-weight:600;">TOTAL GPDP DEMANDS</div>
+        <div class="metric-label">TOTAL GPDP DEMANDS</div>
         <div class="metric-value">{total_demands}</div>
-        <div style="font-size:0.75rem; color:#cbd5e1;">Demands Identified in Atlas</div>
+        <div class="metric-desc">Demands Identified in Atlas</div>
     </div>
     """, unsafe_allow_html=True)
 
 with col3:
     st.markdown(f"""
     <div class="metric-card">
-        <div style="font-size:0.8rem; color:#94a3b8; font-weight:600;">TIER 1 (COMMUNITY ALONE)</div>
+        <div class="metric-label">TIER 1 (COMMUNITY ALONE)</div>
         <div class="metric-value">{t1_demands}</div>
-        <div style="font-size:0.75rem; color:#cbd5e1;">Immediate Local Delivery</div>
+        <div class="metric-desc">Immediate Local Delivery</div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -391,8 +414,8 @@ with map_col:
 
     # Basemap tiles
     tile_dict = {
-        "CartoDB Dark": "CartoDB dark_matter",
         "CartoDB Positron (Light)": "CartoDB positron",
+        "CartoDB Dark": "CartoDB dark_matter",
         "OpenStreetMap": "OpenStreetMap"
     }
     
@@ -415,14 +438,14 @@ with map_col:
                 encoded_png = "data:image/png;base64," + base64.b64encode(img_bytes).decode()
                 image_source = encoded_png
             else:
-                # SVG sample fallback representing district-cut orthorectified imagery
+                # SVG sample fallback representing district-cut orthorectified imagery (Light theme adjusted)
                 svg_overlay = f"""
                 <svg xmlns="http://www.w3.org/2000/svg" width="600" height="600" viewBox="0 0 600 600">
-                    <rect width="600" height="600" fill="#1e3a5f" fill-opacity="0.75" />
-                    <circle cx="300" cy="300" r="220" fill="none" stroke="#fbbf24" stroke-width="3" stroke-dasharray="8,6" />
-                    <path d="M 80 400 Q 250 150 520 300" fill="none" stroke="#38bdf8" stroke-width="6" />
-                    <text x="40" y="60" font-family="sans-serif" font-size="24" font-weight="bold" fill="#ffffff">{target_dist} District ({selected_year})</text>
-                    <text x="40" y="90" font-family="sans-serif" font-size="16" fill="#fde68a">Orthorectified Geospatial Composite Layer</text>
+                    <rect width="600" height="600" fill="#f8fafc" fill-opacity="0.65" />
+                    <circle cx="300" cy="300" r="220" fill="none" stroke="#712416" stroke-width="3" stroke-dasharray="8,6" />
+                    <path d="M 80 400 Q 250 150 520 300" fill="none" stroke="#0284c7" stroke-width="6" />
+                    <text x="40" y="60" font-family="sans-serif" font-size="24" font-weight="bold" fill="#1e293b">{target_dist} District ({selected_year})</text>
+                    <text x="40" y="90" font-family="sans-serif" font-size="16" fill="#475569">Orthorectified Geospatial Composite Layer</text>
                 </svg>
                 """
                 image_source = "data:image/svg+xml;utf8," + svg_overlay
@@ -439,20 +462,20 @@ with map_col:
 
     # Render Demand Village Bubbles
     for _, v in filtered_df.iterrows():
-        fill_col = get_demand_color(v["totalDemand"]) if metric_choice == "Total GPDP Demand" else ELEMENT_COLORS.get(v["dominantElement"], "#fbbf24")
+        fill_col = get_demand_color(v["totalDemand"]) if metric_choice == "Total GPDP Demand" else ELEMENT_COLORS.get(v["dominantElement"], "#cbd5e1")
         
         radius = max(6, min(22, int(v["totalDemand"] * 0.35)))
         
-        # High contrast custom tooltip matching #712416
+        # Clean, light-themed tooltip
         tooltip_html = f"""
-        <div style="background-color:#151827; color:#ffffff; border:1.5px solid #712416; border-radius:8px; padding:10px; font-family:sans-serif; min-width:180px;">
-            <div style="font-weight:bold; font-size:13px; color:#ffffff;">{v['name']} Village</div>
-            <div style="font-weight:bold; font-size:12px; color:#fbbf24; margin-top:2px;">Total GPDP Demands: {v['totalDemand']}</div>
-            <div style="font-size:11px; color:#cbd5e1; border-top:1px solid #343A4D; margin-top:6px; padding-top:4px;">
+        <div style="background-color:#ffffff; color:#1e293b; border:1px solid #e2e8f0; border-top:3px solid #712416; border-radius:6px; padding:12px; font-family:sans-serif; min-width:180px; box-shadow: 0 4px 10px rgba(0,0,0,0.08);">
+            <div style="font-weight:700; font-size:14px; color:#1e293b;">{v['name']} Village</div>
+            <div style="font-weight:600; font-size:12px; color:#712416; margin-top:4px;">Total GPDP Demands: {v['totalDemand']}</div>
+            <div style="font-size:11px; color:#475569; border-top:1px solid #f1f5f9; margin-top:8px; padding-top:6px;">
                 T1: <b>{v['tier1']}</b> · T2: <b>{v['tier2']}</b> · T3: <b>{v['tier3']}</b>
             </div>
-            <div style="font-size:10px; color:#94a3b8; margin-top:4px;">
-                Dominant Theme: <span style="color:#fde68a; font-weight:600;">{v['dominantElement']}</span>
+            <div style="font-size:11px; color:#64748b; margin-top:4px;">
+                Dominant Theme: <span style="color:#0f172a; font-weight:600;">{v['dominantElement']}</span>
             </div>
         </div>
         """
@@ -494,15 +517,16 @@ with analytics_col:
             title="Dominant LCAT Life Elements across Panchayats"
         )
         
+        # Transparent background, clean light-grey grid lines
         fig_bar.update_layout(
-            plot_bgcolor="#151827",
-            paper_bgcolor="#151827",
-            font=dict(color="#f8fafc", size=11),
+            plot_bgcolor="rgba(0,0,0,0)",
+            paper_bgcolor="rgba(0,0,0,0)",
+            font=dict(color="#1e293b", size=11),
             showlegend=False,
             margin=dict(l=10, r=10, t=35, b=10),
             height=260,
-            xaxis=dict(gridcolor="#343a4d"),
-            yaxis=dict(gridcolor="#343a4d", categoryorder="total ascending")
+            xaxis=dict(gridcolor="#e2e8f0", title_font=dict(color="#64748b"), tickfont=dict(color="#64748b")),
+            yaxis=dict(gridcolor="#e2e8f0", categoryorder="total ascending", tickfont=dict(color="#475569"))
         )
         st.plotly_chart(fig_bar, use_container_width=True)
         
@@ -519,20 +543,20 @@ with analytics_col:
             hole=0.55,
             color="Tier",
             color_discrete_map={
-                "Tier 1 (community alone)": "#fbbf24",
+                "Tier 1 (community alone)": "#d97706",
                 "Tier 2 (Minor Support)": "#712416",
-                "Tier 3 (Convergence)": "#38bdf8"
+                "Tier 3 (Convergence)": "#0ea5e9"
             },
             title="Implementation Tier Convergence"
         )
         
         fig_donut.update_layout(
-            plot_bgcolor="#151827",
-            paper_bgcolor="#151827",
-            font=dict(color="#f8fafc", size=11),
+            plot_bgcolor="rgba(0,0,0,0)",
+            paper_bgcolor="rgba(0,0,0,0)",
+            font=dict(color="#1e293b", size=11),
             margin=dict(l=10, r=10, t=35, b=10),
             height=260,
-            legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5)
+            legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5, font=dict(color="#475569"))
         )
         st.plotly_chart(fig_donut, use_container_width=True)
     else:
