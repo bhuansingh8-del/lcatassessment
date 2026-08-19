@@ -432,10 +432,18 @@ with st.sidebar:
         
     selected_district = st.selectbox("District", dist_options)
     
+    # Village Selector - dynamically sourced based on selected district
+    if selected_district != "All Districts":
+        vill_options = ["All Villages"] + df_villages[(df_villages["state"] == selected_state) & (df_villages["district"] == selected_district)]["name"].dropna().unique().tolist()
+    else:
+        vill_options = ["All Villages"] + df_villages[df_villages["state"] == selected_state]["name"].dropna().unique().tolist()
+        
+    selected_village = st.selectbox("Gram Panchayat / Village", vill_options)
+    
     # Map Metric
     metric_choice = st.selectbox(
         "Map Metric",
-        ["Total GPDP Demand", "Dominant LCAT Element", "Implementation Tiers"]
+        ["Total GPDP Demand", "Highest Demand Concentration", "Implementation Tiers"]
     )
     
     # Basemap Mode
@@ -483,6 +491,9 @@ if selected_district != "All Districts":
     filtered_df = df_villages[(df_villages["district"] == selected_district) & (df_villages["state"] == selected_state)]
 else:
     filtered_df = df_villages[df_villages["state"] == selected_state]
+
+if selected_village != "All Villages":
+    filtered_df = filtered_df[filtered_df["name"] == selected_village]
 
 
 # -----------------------------------------------------------------------------
@@ -683,7 +694,7 @@ with map_col:
                 T1: <b>{v['tier1']}</b> · T2: <b>{v['tier2']}</b> · T3: <b>{v['tier3']}</b>
             </div>
             <div style="font-size:11px; color:#64748b; margin-top:4px;">
-                Dominant Theme: <span style="color:#0f172a; font-weight:600;">{v['dominantElement']}</span>
+                Highest Demand Concentration: <span style="color:#0f172a; font-weight:600;">{v['dominantElement']}</span>
             </div>
         </div>
         """
@@ -738,6 +749,8 @@ with analytics_col:
             raw_df = raw_df[raw_df['State'] == selected_state]
         if selected_district != "All Districts" and 'District' in raw_df.columns:
             raw_df = raw_df[raw_df['District'] == selected_district]
+        if selected_village != "All Villages" and 'Panchayat/Village' in raw_df.columns:
+            raw_df = raw_df[raw_df['Panchayat/Village'] == selected_village]
             
         # Clean Theme formatting matching existing logic
         if 'Theme' in raw_df.columns:
@@ -793,7 +806,7 @@ with analytics_col:
                 rows=rows, cols=cols,
                 specs=[[{'type': 'domain'}] * cols] * rows,
                 subplot_titles=themes_list,
-                vertical_spacing=0.1
+                vertical_spacing=0.25
             )
             
             for i, theme in enumerate(themes_list):
@@ -823,15 +836,15 @@ with analytics_col:
                 plot_bgcolor="rgba(0,0,0,0)",
                 paper_bgcolor="rgba(0,0,0,0)",
                 font=dict(color="#1e293b", size=11),
-                margin=dict(l=10, r=10, t=50, b=30),
-                height=160 * rows + 60,
+                margin=dict(l=10, r=10, t=50, b=60),
+                height=200 * rows + 60,
                 showlegend=True,
-                legend=dict(orientation="h", yanchor="bottom", y=-0.1 / rows, xanchor="center", x=0.5, font=dict(color="#475569"), title="")
+                legend=dict(orientation="h", yanchor="bottom", y=-0.15 / max(1, rows), xanchor="center", x=0.5, font=dict(color="#475569"), title="")
             )
             
             # Shift generated subplot titles to sit directly underneath each ring
             for annotation in fig_theme['layout']['annotations']:
-                annotation['y'] -= (1.0 / rows) * 0.95
+                annotation['y'] -= (1.0 / rows) * 1.15
                 annotation['font'] = dict(size=11, color="#475569")
                 
             st.plotly_chart(fig_theme, use_container_width=True, config={'displayModeBar': False})
@@ -882,15 +895,15 @@ with analytics_col:
                     plot_bgcolor="rgba(0,0,0,0)",
                     paper_bgcolor="rgba(0,0,0,0)",
                     font=dict(color="#1e293b", size=11),
-                    margin=dict(l=10, r=10, t=50, b=30),
-                    height=240,
+                    margin=dict(l=10, r=10, t=50, b=60),
+                    height=280,
                     showlegend=True,
-                    legend=dict(orientation="h", yanchor="bottom", y=-0.25, xanchor="center", x=0.5, font=dict(color="#475569"), title="")
+                    legend=dict(orientation="h", yanchor="bottom", y=-0.3, xanchor="center", x=0.5, font=dict(color="#475569"), title="")
                 )
                 
                 # Shift titles underneath rings
                 for annotation in fig_pillar['layout']['annotations']:
-                    annotation['y'] -= 0.95
+                    annotation['y'] -= 1.15
                     annotation['font'] = dict(size=12, color="#475569")
                     
                 st.plotly_chart(fig_pillar, use_container_width=True, config={'displayModeBar': False})
@@ -901,24 +914,151 @@ with analytics_col:
 
 
 # -----------------------------------------------------------------------------
-# 8. VILLAGE DATA TABLE
+# 8. LANDSCAPE TRAJECTORY
 # -----------------------------------------------------------------------------
-st.markdown("### Gram Panchayat Action Registry")
-if not filtered_df.empty:
-    st.dataframe(
-        filtered_df[["name", "district", "block", "totalDemand", "tier1", "tier2", "tier3", "dominantElement"]],
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            "name": "Village Name",
-            "district": "District",
-            "block": "Block",
-            "totalDemand": st.column_config.ProgressColumn("Total Demands", format="%d", min_value=0, max_value=100),
-            "tier1": "T1 (Local)",
-            "tier2": "T2 (Minor)",
-            "tier3": "T3 (Convergence)",
-            "dominantElement": "Dominant LCAT Element"
+st.markdown("---")
+st.markdown("### District LCAT Landscape Trajectory")
+
+@st.cache_data
+def load_trajectory_data():
+    file_path = "data/District Wise LCAT.xlsx"
+    if os.path.exists(file_path):
+        try:
+            df = pd.read_excel(file_path)
+            # Ensure District column is normalized
+            dist_col = next((c for c in df.columns if 'district' in str(c).lower()), None)
+            if dist_col:
+                df = df.rename(columns={dist_col: "District"})
+            return df
+        except Exception:
+            return pd.DataFrame()
+    return pd.DataFrame()
+
+traj_df = load_trajectory_data()
+
+if not traj_df.empty and "District" in traj_df.columns:
+    # Trajectory responds strictly to District selection only, NOT Village selection.
+    if selected_district != "All Districts":
+        filtered_traj_df = traj_df[traj_df["District"] == selected_district]
+    else:
+        if selected_state != "Unknown":
+            filtered_traj_df = traj_df[traj_df["District"].isin(dist_options)]
+        else:
+            filtered_traj_df = traj_df.copy()
+
+    if filtered_traj_df.empty:
+        st.info("No trajectory data available for the selected geographic filters.")
+    else:
+        traj_themes = [c for c in filtered_traj_df.columns if c not in ["District", "State"]]
+        valid_themes = [t for t in traj_themes if t in LCAT_ELEMENTS]
+        if not valid_themes:
+            valid_themes = traj_themes 
+            
+        status_colors = {
+            "Improving": "#16a34a",
+            "Stable": "#3b82f6",
+            "Mixed": "#eab308",
+            "Declining": "#ef4444",
+            "Unknown": "#cbd5e1"
         }
-    )
+
+        # --- UPPER LEVEL: VISUAL SUMMARY ---
+        st.markdown("##### Visual Summary")
+        n_districts = len(filtered_traj_df)
+        st.caption(f"Showing trajectory distribution across **{n_districts}** district(s).")
+        
+        num_rings = len(valid_themes)
+        r_cols = 4
+        r_rows = max(1, (num_rings + r_cols - 1) // r_cols)
+        
+        fig_health = make_subplots(
+            rows=r_rows, cols=r_cols,
+            specs=[[{'type': 'domain'}] * r_cols] * r_rows,
+            subplot_titles=valid_themes,
+            vertical_spacing=0.25
+        )
+        
+        for i, theme in enumerate(valid_themes):
+            r = (i // r_cols) + 1
+            c = (i % r_cols) + 1
+            
+            counts = filtered_traj_df[theme].astype(str).str.strip().value_counts().reset_index()
+            counts.columns = ["Status", "Count"]
+            
+            colors = [status_colors.get(s, status_colors["Unknown"]) for s in counts["Status"]]
+            
+            fig_health.add_trace(go.Pie(
+                labels=counts["Status"],
+                values=counts["Count"],
+                hole=0.65,
+                title={'text': f"<b>{n_districts}</b>", 'font': {'size': 14, 'color': '#1e293b'}},
+                marker=dict(colors=colors, line=dict(color='#ffffff', width=1.5)),
+                textinfo='none',
+                hoverinfo='label+value',
+                name=theme,
+                sort=False
+            ), row=r, col=c)
+        
+        fig_health.update_layout(
+            plot_bgcolor="rgba(0,0,0,0)",
+            paper_bgcolor="rgba(0,0,0,0)",
+            font=dict(color="#1e293b", size=11),
+            margin=dict(l=10, r=10, t=40, b=60),
+            height=200 * r_rows,
+            showlegend=True,
+            legend=dict(orientation="h", yanchor="bottom", y=-0.15 / max(1, r_rows), xanchor="center", x=0.5, font=dict(color="#475569"))
+        )
+        
+        for annotation in fig_health['layout']['annotations']:
+            annotation['y'] -= (1.0 / max(1, r_rows)) * 1.15
+            annotation['font'] = dict(size=11, color="#475569")
+            
+        st.plotly_chart(fig_health, use_container_width=True, config={'displayModeBar': False})
+        
+        # --- LOWER LEVEL: TRAJECTORY MATRIX ---
+        st.markdown("##### District × Theme Trajectory Matrix")
+        
+        matrix_df = filtered_traj_df.set_index("District")[valid_themes]
+        status_to_num = {"Declining": 0, "Mixed": 1, "Stable": 2, "Improving": 3}
+        
+        z_data = matrix_df.copy()
+        for col in z_data.columns:
+            z_data[col] = z_data[col].apply(lambda x: status_to_num.get(str(x).strip(), -1))
+            
+        text_matrix = matrix_df.fillna("Unknown").values
+        
+        heatmap_colors = [
+            [0.0, "#cbd5e1"], [0.2, "#cbd5e1"],       # -1: Unknown
+            [0.2, "#ef4444"], [0.4, "#ef4444"],       # 0: Declining
+            [0.4, "#eab308"], [0.6, "#eab308"],       # 1: Mixed
+            [0.6, "#3b82f6"], [0.8, "#3b82f6"],       # 2: Stable
+            [0.8, "#16a34a"], [1.0, "#16a34a"]        # 3: Improving
+        ]
+        
+        fig_matrix = go.Figure(data=go.Heatmap(
+            z=z_data.values,
+            x=valid_themes,
+            y=matrix_df.index,
+            text=text_matrix,
+            hovertemplate="<b>District:</b> %{y}<br><b>Theme:</b> %{x}<br><b>Status:</b> %{text}<extra></extra>",
+            colorscale=heatmap_colors,
+            zmin=-1,
+            zmax=3,
+            showscale=False,
+            xgap=3,
+            ygap=3
+        ))
+        
+        fig_matrix.update_layout(
+            plot_bgcolor="rgba(0,0,0,0)",
+            paper_bgcolor="rgba(0,0,0,0)",
+            font=dict(color="#1e293b", size=11),
+            margin=dict(l=10, r=10, t=10, b=10),
+            height=max(200, len(matrix_df) * 35 + 100),
+            xaxis=dict(tickangle=45, tickfont=dict(color="#475569")),
+            yaxis=dict(tickfont=dict(color="#1e293b", weight="bold"))
+        )
+        
+        st.plotly_chart(fig_matrix, use_container_width=True, config={'displayModeBar': False})
 else:
-    st.info("Please adjust filters or ensure data is uploaded to view village registry.")
+    st.info("Please add 'District Wise LCAT.xlsx' to the data folder to view the Landscape Trajectory.")
