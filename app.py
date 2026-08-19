@@ -10,6 +10,7 @@ import glob
 import json
 import base64
 from typing import Dict, Any, List, Optional
+from plotly.subplots import make_subplots
 
 # -----------------------------------------------------------------------------
 # 1. PAGE CONFIGURATION & CUSTOM CSS (Brand Colors: #712416 & #f8fafc)
@@ -487,22 +488,11 @@ else:
 # -----------------------------------------------------------------------------
 # 4. MAIN HEADER BANNER
 # -----------------------------------------------------------------------------
-# Calculate district population stats dynamically if a specific district is selected
-pop_stats_html = ""
-if selected_district != "All Districts":
-    pop_raster_path = "data/population/ind_pd_2020_1km_COG.tif"
-    if os.path.exists(pop_raster_path) and selected_district in DISTRICT_CENTERS:
-        dist_bounds = DISTRICT_CENTERS[selected_district]["bounds"]
-        tot_pop, mean_pop = get_population_stats(pop_raster_path, dist_bounds)
-        if tot_pop > 0:
-            pop_stats_html = f'<p class="header-subtitle" style="margin-top:6px; font-size:0.8rem; color:#cbd5e1;">👥 <b>Est. Population (Raster Box):</b> {tot_pop:,.0f} &nbsp;|&nbsp; <b>Mean Density:</b> {mean_pop:,.1f} / 1km cell</p>'
-
 st.markdown(f"""
 <div class="header-banner">
     <div>
         <h1 class="header-title">Landscape Assessment Atlas</h1>
         <p class="header-subtitle">Climate Risk & Community Demand &nbsp;·&nbsp; {selected_state} › {selected_district}</p>
-        {pop_stats_html}
     </div>
 </div>
 """, unsafe_allow_html=True)
@@ -511,13 +501,29 @@ st.markdown(f"""
 # -----------------------------------------------------------------------------
 # 5. HIGH-LEVEL KPI METRICS
 # -----------------------------------------------------------------------------
-col1, col2, col3 = st.columns(3)
+# Calculate district population stats dynamically if a specific district is selected
+tot_pop = 0
+mean_pop = 0.0
+show_pop_kpis = False
+
+if selected_district != "All Districts":
+    pop_raster_path = "data/population/ind_pd_2020_1km_COG.tif"
+    if os.path.exists(pop_raster_path) and selected_district in DISTRICT_CENTERS:
+        dist_bounds = DISTRICT_CENTERS[selected_district]["bounds"]
+        tot_pop, mean_pop = get_population_stats(pop_raster_path, dist_bounds)
+        if tot_pop > 0:
+            show_pop_kpis = True
+
+if show_pop_kpis:
+    cols = st.columns(5)
+else:
+    cols = st.columns(3)
 
 total_villages = len(filtered_df)
 total_demands = filtered_df["totalDemand"].sum() if total_villages > 0 else 0
 t1_demands = filtered_df["tier1"].sum() if total_villages > 0 else 0
 
-with col1:
+with cols[0]:
     st.markdown(f"""
     <div class="metric-card">
         <div class="metric-label">ACTIVE VILLAGES</div>
@@ -526,7 +532,7 @@ with col1:
     </div>
     """, unsafe_allow_html=True)
 
-with col2:
+with cols[1]:
     st.markdown(f"""
     <div class="metric-card">
         <div class="metric-label">TOTAL GPDP DEMANDS</div>
@@ -535,7 +541,7 @@ with col2:
     </div>
     """, unsafe_allow_html=True)
 
-with col3:
+with cols[2]:
     st.markdown(f"""
     <div class="metric-card">
         <div class="metric-label">TIER 1 (COMMUNITY ALONE)</div>
@@ -543,6 +549,24 @@ with col3:
         <div class="metric-desc">Immediate Local Delivery</div>
     </div>
     """, unsafe_allow_html=True)
+
+if show_pop_kpis:
+    with cols[3]:
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-label">RASTER POPULATION</div>
+            <div class="metric-value">{tot_pop:,.0f}</div>
+            <div class="metric-desc">Total Est. (Selected Dist)</div>
+        </div>
+        """, unsafe_allow_html=True)
+    with cols[4]:
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-label">MEAN DENSITY</div>
+            <div class="metric-value">{mean_pop:,.1f}</div>
+            <div class="metric-desc">Avg per 1km Cell</div>
+        </div>
+        """, unsafe_allow_html=True)
 
 st.markdown("<br>", unsafe_allow_html=True)
 
@@ -748,100 +772,128 @@ with analytics_col:
         tier_order = ["Tier 1 (community alone)", "Tier 2 (Minor Support)", "Tier 3 (Convergence)"]
 
         # -------------------------------------------------------------
-        # Visualization 1: Tiers across 8 Themes
+        # Visualization 1: Tiers across Themes (Radial Grid)
         # -------------------------------------------------------------
         theme_tier_df = raw_df[raw_df['Clean_Tier'] != 'Unknown'].groupby(['Clean_Theme', 'Clean_Tier']).size().reset_index(name='Count')
         if not theme_tier_df.empty:
             theme_pivot = theme_tier_df.pivot(index='Clean_Theme', columns='Clean_Tier', values='Count').fillna(0)
             theme_pivot['Total'] = theme_pivot.sum(axis=1)
-            theme_pivot = theme_pivot.sort_values('Total', ascending=True)
+            theme_pivot = theme_pivot.sort_values('Total', ascending=False)
             
             plot_df_theme = theme_pivot.drop(columns=['Total']).reset_index().melt(id_vars='Clean_Theme', var_name='Tier', value_name='Count')
             
-            fig_theme = px.bar(
-                plot_df_theme,
-                y='Clean_Theme',
-                x='Count',
-                color='Tier',
-                orientation='h',
-                color_discrete_map=tier_colors,
-                category_orders={"Clean_Theme": theme_pivot.index.tolist(), "Tier": tier_order},
-                title="Tiers across 8 Themes"
+            themes_list = theme_pivot.index.tolist()
+            n_themes = len(themes_list)
+            
+            # Formulate grid size (2 columns)
+            cols = 2
+            rows = max(1, (n_themes + 1) // cols)
+            
+            fig_theme = make_subplots(
+                rows=rows, cols=cols,
+                specs=[[{'type': 'domain'}] * cols] * rows,
+                subplot_titles=themes_list,
+                vertical_spacing=0.1
             )
             
-            # Annotate total values to the right side of the bars
-            max_val = theme_pivot['Total'].max()
-            for idx, row in theme_pivot.iterrows():
-                fig_theme.add_annotation(
-                    x=row['Total'] + (max_val * 0.03),
-                    y=idx,
-                    text=f"<b>{int(row['Total'])}</b>",
-                    showarrow=False,
-                    xanchor='left',
-                    font=dict(size=12, color="#1e293b")
-                )
-            
+            for i, theme in enumerate(themes_list):
+                r = i // cols + 1
+                c = i % cols + 1
+                theme_data = plot_df_theme[plot_df_theme['Clean_Theme'] == theme]
+                theme_data = theme_data[theme_data['Count'] > 0] # Filter out 0 for cleaner UI
+                
+                colors = [tier_colors.get(t, "#cbd5e1") for t in theme_data['Tier']]
+                total = theme_pivot.loc[theme, 'Total']
+                
+                fig_theme.add_trace(go.Pie(
+                    labels=theme_data['Tier'],
+                    values=theme_data['Count'],
+                    hole=0.68,
+                    title={'text': f"<b>{int(total)}</b>", 'font': {'size': 15, 'color': '#1e293b'}},
+                    marker=dict(colors=colors, line=dict(color='#ffffff', width=1.5)),
+                    textinfo='none',
+                    hoverinfo='label+percent+value',
+                    name=theme,
+                    sort=False
+                ), row=r, col=c)
+                
             fig_theme.update_layout(
-                barmode='stack',
+                title_text="Tiers across Themes",
+                title_font=dict(size=14, color="#1e293b", family="sans-serif"),
                 plot_bgcolor="rgba(0,0,0,0)",
                 paper_bgcolor="rgba(0,0,0,0)",
                 font=dict(color="#1e293b", size=11),
-                margin=dict(l=10, r=40, t=35, b=10),
-                height=320,
-                xaxis=dict(visible=False, showgrid=False), # Hide axis for cleaner look (data is on labels)
-                yaxis=dict(title="", tickfont=dict(color="#475569")),
-                legend=dict(orientation="h", yanchor="bottom", y=-0.15, xanchor="center", x=0.5, font=dict(color="#475569"), title="")
+                margin=dict(l=10, r=10, t=50, b=30),
+                height=160 * rows + 60,
+                showlegend=True,
+                legend=dict(orientation="h", yanchor="bottom", y=-0.1 / rows, xanchor="center", x=0.5, font=dict(color="#475569"), title="")
             )
-            st.plotly_chart(fig_theme, use_container_width=True)
+            
+            # Shift generated subplot titles to sit directly underneath each ring
+            for annotation in fig_theme['layout']['annotations']:
+                annotation['y'] -= (1.0 / rows) * 0.95
+                annotation['font'] = dict(size=11, color="#475569")
+                
+            st.plotly_chart(fig_theme, use_container_width=True, config={'displayModeBar': False})
 
         # -------------------------------------------------------------
-        # Visualization 2: Tiers across 3 Pillars
+        # Visualization 2: Tiers across 3 Pillars (Radial Grid)
         # -------------------------------------------------------------
         if pillar_col:
-            # Filter specifically to ignore unknown/blank pillars
             pillar_tier_df = raw_df[(raw_df['Clean_Tier'] != 'Unknown') & (raw_df['Clean_Pillar'] != 'Unknown') & (raw_df['Clean_Pillar'] != 'nan')].groupby(['Clean_Pillar', 'Clean_Tier']).size().reset_index(name='Count')
             
             if not pillar_tier_df.empty:
                 pillar_pivot = pillar_tier_df.pivot(index='Clean_Pillar', columns='Clean_Tier', values='Count').fillna(0)
                 pillar_pivot['Total'] = pillar_pivot.sum(axis=1)
-                pillar_pivot = pillar_pivot.sort_values('Total', ascending=True)
+                pillar_pivot = pillar_pivot.sort_values('Total', ascending=False)
                 
                 plot_df_pillar = pillar_pivot.drop(columns=['Total']).reset_index().melt(id_vars='Clean_Pillar', var_name='Tier', value_name='Count')
                 
-                fig_pillar = px.bar(
-                    plot_df_pillar,
-                    y='Clean_Pillar',
-                    x='Count',
-                    color='Tier',
-                    orientation='h',
-                    color_discrete_map=tier_colors,
-                    category_orders={"Clean_Pillar": pillar_pivot.index.tolist(), "Tier": tier_order},
-                    title="Tiers across Pillars"
+                pillars_list = pillar_pivot.index.tolist()
+                n_pillars = len(pillars_list)
+                
+                fig_pillar = make_subplots(
+                    rows=1, cols=max(1, n_pillars),
+                    specs=[[{'type': 'domain'}] * max(1, n_pillars)],
+                    subplot_titles=pillars_list
                 )
                 
-                max_val_pillar = pillar_pivot['Total'].max()
-                for idx, row in pillar_pivot.iterrows():
-                    fig_pillar.add_annotation(
-                        x=row['Total'] + (max_val_pillar * 0.03),
-                        y=idx,
-                        text=f"<b>{int(row['Total'])}</b>",
-                        showarrow=False,
-                        xanchor='left',
-                        font=dict(size=12, color="#1e293b")
-                    )
+                for i, pillar in enumerate(pillars_list):
+                    pillar_data = plot_df_pillar[plot_df_pillar['Clean_Pillar'] == pillar]
+                    pillar_data = pillar_data[pillar_data['Count'] > 0]
+                    colors = [tier_colors.get(t, "#cbd5e1") for t in pillar_data['Tier']]
+                    total = pillar_pivot.loc[pillar, 'Total']
+                    
+                    fig_pillar.add_trace(go.Pie(
+                        labels=pillar_data['Tier'],
+                        values=pillar_data['Count'],
+                        hole=0.68,
+                        title={'text': f"<b>{int(total)}</b>", 'font': {'size': 18, 'color': '#1e293b'}},
+                        marker=dict(colors=colors, line=dict(color='#ffffff', width=2)),
+                        textinfo='none',
+                        hoverinfo='label+percent+value',
+                        name=pillar,
+                        sort=False
+                    ), row=1, col=i+1)
                     
                 fig_pillar.update_layout(
-                    barmode='stack',
+                    title_text="Tiers across Pillars",
+                    title_font=dict(size=14, color="#1e293b", family="sans-serif"),
                     plot_bgcolor="rgba(0,0,0,0)",
                     paper_bgcolor="rgba(0,0,0,0)",
                     font=dict(color="#1e293b", size=11),
-                    margin=dict(l=10, r=40, t=35, b=10),
-                    height=200,
-                    xaxis=dict(visible=False, showgrid=False),
-                    yaxis=dict(title="", tickfont=dict(color="#475569")),
-                    showlegend=False # Legend already visible from the first chart
+                    margin=dict(l=10, r=10, t=50, b=30),
+                    height=240,
+                    showlegend=True,
+                    legend=dict(orientation="h", yanchor="bottom", y=-0.25, xanchor="center", x=0.5, font=dict(color="#475569"), title="")
                 )
-                st.plotly_chart(fig_pillar, use_container_width=True)
+                
+                # Shift titles underneath rings
+                for annotation in fig_pillar['layout']['annotations']:
+                    annotation['y'] -= 0.95
+                    annotation['font'] = dict(size=12, color="#475569")
+                    
+                st.plotly_chart(fig_pillar, use_container_width=True, config={'displayModeBar': False})
             else:
                 st.info("No mapped pillar data available for this selection.")
     else:
