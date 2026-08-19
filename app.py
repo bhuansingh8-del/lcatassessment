@@ -4,6 +4,9 @@ from streamlit_folium import st_folium
 import plotly.express as px
 import plotly.graph_objects as go
 import pandas as pd
+import numpy as np
+import os
+import glob
 import json
 import base64
 from typing import Dict, Any, List, Optional
@@ -27,8 +30,28 @@ st.markdown("""
         font-family: 'Inter', sans-serif;
     }
     
-    /* Fix for text rendering black in Streamlit's Light Mode */
-    .stApp p, .stApp h1, .stApp h2, .stApp h3, .stApp h4, .stApp h5, .stApp h6, .stApp label {
+    /* Fix for Streamlit Light Mode inputs and text visibility */
+    [data-testid="stSidebar"] {
+        background-color: #151827;
+    }
+    [data-testid="stMarkdownContainer"] p, 
+    [data-testid="stMarkdownContainer"] h1, 
+    [data-testid="stMarkdownContainer"] h2, 
+    [data-testid="stMarkdownContainer"] h3,
+    .stSelectbox label {
+        color: #f8fafc !important;
+    }
+    
+    /* Force selectbox and popovers to dark to prevent white-on-white text */
+    div[data-baseweb="select"] > div {
+        background-color: #1e293b !important;
+        color: #f8fafc !important;
+        border-color: #334155 !important;
+    }
+    ul[data-baseweb="menu"] {
+        background-color: #1e293b !important;
+    }
+    li[data-baseweb="option"] {
         color: #f8fafc !important;
     }
     
@@ -108,7 +131,8 @@ ELEMENT_COLORS = {
     "Visual and Sensory qualities": "#a78bfa",
     "Wildlife and Biodiversity richness": "#fb923c",
     "Infrastructure and Economic factors": "#94a3b8",
-    "Community and Governance": "#facc15"
+    "Community and Governance": "#facc15",
+    "Unknown": "#ffffff"
 }
 
 DISTRICT_CENTERS = {
@@ -117,29 +141,106 @@ DISTRICT_CENTERS = {
     "Dhamtari": {"lat": 20.70, "lng": 81.55, "bounds": [[20.40, 81.20], [21.05, 81.90]]},
     "Kondagaon": {"lat": 19.60, "lng": 81.66, "bounds": [[19.30, 81.30], [19.90, 82.00]]},
     "Aligarh": {"lat": 27.89, "lng": 78.08, "bounds": [[27.65, 77.40], [28.25, 78.20]]},
-    "Banda": {"lat": 25.48, "lng": 80.33, "bounds": [[24.85, 80.05], [25.55, 80.85]]}
+    "Banda": {"lat": 25.48, "lng": 80.33, "bounds": [[24.85, 80.05], [25.55, 80.85]]},
+    "Jhabua": {"lat": 22.76, "lng": 74.59, "bounds": [[22.50, 74.30], [23.00, 74.80]]},
+    "Sehore": {"lat": 23.20, "lng": 77.08, "bounds": [[22.90, 76.80], [23.50, 77.40]]},
+    "Prayagraj": {"lat": 25.43, "lng": 81.84, "bounds": [[25.10, 81.50], [25.80, 82.20]]},
+    "Dhar": {"lat": 22.59, "lng": 75.30, "bounds": [[22.30, 75.00], [22.90, 75.60]]}
 }
 
 @st.cache_data
-def get_sample_villages() -> pd.DataFrame:
-    data = [
-        # Bastar
-        {"id": "V_001", "name": "Sidesar", "district": "Bastar", "block": "Bakawand", "lat": 19.12, "lng": 81.85, "totalDemand": 28, "tier1": 8, "tier2": 8, "tier3": 12, "dominantElement": "Land cover and Agriculture", "riskScore": 68},
-        {"id": "V_002", "name": "Karpawand", "district": "Bastar", "block": "Bakawand", "lat": 19.18, "lng": 81.92, "totalDemand": 45, "tier1": 15, "tier2": 18, "tier3": 12, "dominantElement": "Hydrology", "riskScore": 74},
-        {"id": "V_003", "name": "Nagarnar", "district": "Bastar", "block": "Jagdalpur", "lat": 19.08, "lng": 82.10, "totalDemand": 36, "tier1": 10, "tier2": 14, "tier3": 12, "dominantElement": "Infrastructure and Economic factors", "riskScore": 55},
-        {"id": "V_004", "name": "Tokapal", "district": "Bastar", "block": "Tokapal", "lat": 18.98, "lng": 81.78, "totalDemand": 52, "tier1": 20, "tier2": 18, "tier3": 14, "dominantElement": "Wildlife and Biodiversity richness", "riskScore": 82},
-        # Kanker
-        {"id": "V_005", "name": "Narharpur", "district": "Kanker", "block": "Narharpur", "lat": 20.35, "lng": 81.65, "totalDemand": 40, "tier1": 12, "tier2": 16, "tier3": 12, "dominantElement": "Hydrology", "riskScore": 62},
-        {"id": "V_006", "name": "Charama", "district": "Kanker", "block": "Charama", "lat": 20.48, "lng": 81.38, "totalDemand": 30, "tier1": 9, "tier2": 11, "tier3": 10, "dominantElement": "Landform and topography", "riskScore": 50},
-        {"id": "V_007", "name": "Antagarh", "district": "Kanker", "block": "Antagarh", "lat": 20.08, "lng": 81.18, "totalDemand": 65, "tier1": 24, "tier2": 26, "tier3": 15, "dominantElement": "Land cover and Agriculture", "riskScore": 85},
-        # Kondagaon
-        {"id": "V_008", "name": "Keskal", "district": "Kondagaon", "block": "Keskal", "lat": 19.88, "lng": 81.58, "totalDemand": 58, "tier1": 20, "tier2": 22, "tier3": 16, "dominantElement": "Landform and topography", "riskScore": 79},
-        {"id": "V_009", "name": "Makdi", "district": "Kondagaon", "block": "Makdi", "lat": 19.72, "lng": 81.82, "totalDemand": 34, "tier1": 10, "tier2": 14, "tier3": 10, "dominantElement": "Cultural and historical features", "riskScore": 48},
-        # Dhamtari
-        {"id": "V_010", "name": "Nagri", "district": "Dhamtari", "block": "Nagri", "lat": 20.55, "lng": 81.85, "totalDemand": 48, "tier1": 16, "tier2": 18, "tier3": 14, "dominantElement": "Hydrology", "riskScore": 70},
-        {"id": "V_011", "name": "Kurud", "district": "Dhamtari", "block": "Kurud", "lat": 20.82, "lng": 81.71, "totalDemand": 22, "tier1": 6, "tier2": 8, "tier3": 8, "dominantElement": "Infrastructure and Economic factors", "riskScore": 42},
+def load_data_from_folder() -> pd.DataFrame:
+    """Reads GPDP Excel/CSV files from 'data/' folder and aggregates them to Village level."""
+    data_dir = "data"
+    
+    if os.path.exists(data_dir):
+        # Scan for Excel and CSV files
+        all_files = glob.glob(os.path.join(data_dir, "*.xlsx")) + glob.glob(os.path.join(data_dir, "*.csv"))
+        # Filter for files containing "GPDP" in the filename
+        gpdp_files = [f for f in all_files if "GPDP" in os.path.basename(f) or "gpdp" in os.path.basename(f).lower()]
+        
+        if gpdp_files:
+            df_list = []
+            for f in gpdp_files:
+                try:
+                    if f.endswith('.csv'):
+                        df = pd.read_csv(f)
+                    else:
+                        df = pd.read_excel(f)
+                    df_list.append(df)
+                except Exception as e:
+                    st.error(f"Error reading {f}: {e}")
+            
+            if df_list:
+                raw_df = pd.concat(df_list, ignore_index=True)
+                
+                # Clean the theme text (e.g., "1) Hydrology" -> "Hydrology")
+                if 'Theme' in raw_df.columns:
+                    raw_df['Clean_Theme'] = raw_df['Theme'].astype(str).apply(lambda x: x.split(')')[-1].strip() if ')' in x else x)
+                else:
+                    raw_df['Clean_Theme'] = 'Unknown'
+                    
+                villages = []
+                np.random.seed(42) # Ensure consistent random offsets for lat/lng
+                
+                required_cols = ['State', 'District', 'Block', 'Panchayat/Village']
+                missing = [c for c in required_cols if c not in raw_df.columns]
+                
+                if not missing:
+                    grouped = raw_df.groupby(['State', 'District', 'Block', 'Panchayat/Village'])
+                    for name, group in grouped:
+                        state, district, block, village_name = name
+                        total_demand = len(group)
+                        
+                        if 'Tier' in group.columns:
+                            t1 = len(group[group['Tier'].astype(str).str.contains('Tier 1', na=False)])
+                            t2 = len(group[group['Tier'].astype(str).str.contains('Tier 2', na=False)])
+                            t3 = len(group[group['Tier'].astype(str).str.contains('Tier 3', na=False)])
+                        else:
+                            t1 = t2 = t3 = 0
+                        
+                        dominant = group['Clean_Theme'].mode()
+                        dom_element = dominant.iloc[0] if not dominant.empty else "Unknown"
+                        
+                        # Apply a small random offset around the district center so points don't perfectly overlap
+                        center = DISTRICT_CENTERS.get(district, {"lat": 21.0, "lng": 81.0})
+                        lat = center["lat"] + np.random.uniform(-0.15, 0.15)
+                        lng = center["lng"] + np.random.uniform(-0.15, 0.15)
+                        
+                        villages.append({
+                            "name": village_name,
+                            "state": state,
+                            "district": district,
+                            "block": block,
+                            "lat": lat,
+                            "lng": lng,
+                            "totalDemand": total_demand,
+                            "tier1": t1,
+                            "tier2": t2,
+                            "tier3": t3,
+                            "dominantElement": dom_element
+                        })
+                    if villages:
+                        return pd.DataFrame(villages)
+
+    # -------------------------------------------------------------------------
+    # FALLBACK DATA (If 'data/' folder is missing or empty)
+    # -------------------------------------------------------------------------
+    st.warning("No valid GPDP files found in 'data/' folder. Using fallback data.")
+    fallback_data = [
+        {"name": "Sidesar", "state": "Chhattisgarh", "district": "Bastar", "block": "Bakawand", "lat": 19.12, "lng": 81.85, "totalDemand": 28, "tier1": 8, "tier2": 8, "tier3": 12, "dominantElement": "Land cover and Agriculture"},
+        {"name": "Karpawand", "state": "Chhattisgarh", "district": "Bastar", "block": "Bakawand", "lat": 19.18, "lng": 81.92, "totalDemand": 45, "tier1": 15, "tier2": 18, "tier3": 12, "dominantElement": "Hydrology"},
+        {"name": "Nagarnar", "state": "Chhattisgarh", "district": "Bastar", "block": "Jagdalpur", "lat": 19.08, "lng": 82.10, "totalDemand": 36, "tier1": 10, "tier2": 14, "tier3": 12, "dominantElement": "Infrastructure and Economic factors"},
+        {"name": "Tokapal", "state": "Chhattisgarh", "district": "Bastar", "block": "Tokapal", "lat": 18.98, "lng": 81.78, "totalDemand": 52, "tier1": 20, "tier2": 18, "tier3": 14, "dominantElement": "Wildlife and Biodiversity richness"},
+        {"name": "Narharpur", "state": "Chhattisgarh", "district": "Kanker", "block": "Narharpur", "lat": 20.35, "lng": 81.65, "totalDemand": 40, "tier1": 12, "tier2": 16, "tier3": 12, "dominantElement": "Hydrology"},
+        {"name": "Charama", "state": "Chhattisgarh", "district": "Kanker", "block": "Charama", "lat": 20.48, "lng": 81.38, "totalDemand": 30, "tier1": 9, "tier2": 11, "tier3": 10, "dominantElement": "Landform and topography"},
+        {"name": "Antagarh", "state": "Chhattisgarh", "district": "Kanker", "block": "Antagarh", "lat": 20.08, "lng": 81.18, "totalDemand": 65, "tier1": 24, "tier2": 26, "tier3": 15, "dominantElement": "Land cover and Agriculture"},
+        {"name": "Keskal", "state": "Chhattisgarh", "district": "Kondagaon", "block": "Keskal", "lat": 19.88, "lng": 81.58, "totalDemand": 58, "tier1": 20, "tier2": 22, "tier3": 16, "dominantElement": "Landform and topography"},
+        {"name": "Makdi", "state": "Chhattisgarh", "district": "Kondagaon", "block": "Makdi", "lat": 19.72, "lng": 81.82, "totalDemand": 34, "tier1": 10, "tier2": 14, "tier3": 10, "dominantElement": "Cultural and historical features"},
+        {"name": "Nagri", "state": "Chhattisgarh", "district": "Dhamtari", "block": "Nagri", "lat": 20.55, "lng": 81.85, "totalDemand": 48, "tier1": 16, "tier2": 18, "tier3": 14, "dominantElement": "Hydrology"},
+        {"name": "Kurud", "state": "Chhattisgarh", "district": "Dhamtari", "block": "Kurud", "lat": 20.82, "lng": 81.71, "totalDemand": 22, "tier1": 6, "tier2": 8, "tier3": 8, "dominantElement": "Infrastructure and Economic factors"},
     ]
-    return pd.DataFrame(data)
+    return pd.DataFrame(fallback_data)
 
 def get_demand_color(demand: int) -> str:
     if demand <= 35:
@@ -158,22 +259,24 @@ with st.sidebar:
     st.markdown('<div class="badge-burgundy">#712416 CONTROLS</div>', unsafe_allow_html=True)
     st.subheader("Geographic Filters")
     
-    df_villages = get_sample_villages()
+    df_villages = load_data_from_folder()
     
-    # State & District Selector
-    selected_state = st.selectbox("State", ["Chhattisgarh", "Uttar Pradesh"])
+    # State Selector - dynamically sourced from loaded data
+    available_states = df_villages["state"].dropna().unique().tolist()
+    if not available_states:
+        available_states = ["Unknown"]
+        
+    selected_state = st.selectbox("State", available_states)
     
-    if selected_state == "Chhattisgarh":
-        dist_options = ["All Districts", "Bastar", "Kanker", "Kondagaon", "Dhamtari"]
-    else:
-        dist_options = ["All Districts", "Aligarh", "Banda"]
+    # District Selector - dynamically sourced based on selected state
+    dist_options = ["All Districts"] + df_villages[df_villages["state"] == selected_state]["district"].dropna().unique().tolist()
         
     selected_district = st.selectbox("District", dist_options)
     
     # Map Metric
     metric_choice = st.selectbox(
         "Map Metric",
-        ["Total GPDP Demand", "Dominant LCAT Element", "Climate Risk Index", "Implementation Tiers"]
+        ["Total GPDP Demand", "Dominant LCAT Element", "Implementation Tiers"]
     )
     
     # Basemap Mode
@@ -207,9 +310,9 @@ with st.sidebar:
 
 # Filter Data
 if selected_district != "All Districts":
-    filtered_df = df_villages[df_villages["district"] == selected_district]
+    filtered_df = df_villages[(df_villages["district"] == selected_district) & (df_villages["state"] == selected_state)]
 else:
-    filtered_df = df_villages
+    filtered_df = df_villages[df_villages["state"] == selected_state]
 
 
 # -----------------------------------------------------------------------------
@@ -231,12 +334,11 @@ st.markdown(f"""
 # -----------------------------------------------------------------------------
 # 5. HIGH-LEVEL KPI METRICS
 # -----------------------------------------------------------------------------
-col1, col2, col3, col4 = st.columns(4)
+col1, col2, col3 = st.columns(3)
 
 total_villages = len(filtered_df)
-total_demands = filtered_df["totalDemand"].sum()
-t1_demands = filtered_df["tier1"].sum()
-avg_risk = filtered_df["riskScore"].mean() if total_villages > 0 else 0
+total_demands = filtered_df["totalDemand"].sum() if total_villages > 0 else 0
+t1_demands = filtered_df["tier1"].sum() if total_villages > 0 else 0
 
 with col1:
     st.markdown(f"""
@@ -265,15 +367,6 @@ with col3:
     </div>
     """, unsafe_allow_html=True)
 
-with col4:
-    st.markdown(f"""
-    <div class="metric-card">
-        <div style="font-size:0.8rem; color:#94a3b8; font-weight:600;">AVG CLIMATE RISK</div>
-        <div class="metric-value" style="color:#ef4444;">{avg_risk:.1f}</div>
-        <div style="font-size:0.75rem; color:#cbd5e1;">Composite Vulnerability Index</div>
-    </div>
-    """, unsafe_allow_html=True)
-
 st.markdown("<br>", unsafe_allow_html=True)
 
 
@@ -291,8 +384,9 @@ with map_col:
         center_lng = DISTRICT_CENTERS[selected_district]["lng"]
         zoom_start = 9
     else:
-        center_lat = 19.85
-        center_lng = 81.65
+        # Fallback to the mean of current village coordinates
+        center_lat = filtered_df["lat"].mean() if not filtered_df.empty else 21.0
+        center_lng = filtered_df["lng"].mean() if not filtered_df.empty else 81.0
         zoom_start = 8
 
     # Basemap tiles
@@ -386,79 +480,84 @@ with analytics_col:
     st.markdown("### LCAT Elements & Risk Breakdown")
     
     # 1. Demand by LCAT Life Element Bar Chart
-    element_counts = filtered_df["dominantElement"].value_counts().reset_index()
-    element_counts.columns = ["Element", "Villages"]
-    
-    fig_bar = px.bar(
-        element_counts,
-        x="Villages",
-        y="Element",
-        orientation="h",
-        color="Element",
-        color_discrete_map=ELEMENT_COLORS,
-        title="Dominant LCAT Life Elements across Panchayats"
-    )
-    
-    fig_bar.update_layout(
-        plot_bgcolor="#151827",
-        paper_bgcolor="#151827",
-        font=dict(color="#f8fafc", size=11),
-        showlegend=False,
-        margin=dict(l=10, r=10, t=35, b=10),
-        height=260,
-        xaxis=dict(gridcolor="#343a4d"),
-        yaxis=dict(gridcolor="#343a4d", categoryorder="total ascending")
-    )
-    st.plotly_chart(fig_bar, use_container_width=True)
-    
-    # 2. Tiers Breakdown Donut Chart
-    tier_data = pd.DataFrame({
-        "Tier": ["Tier 1 (community alone)", "Tier 2 (Minor Support)", "Tier 3 (Convergence)"],
-        "Demands": [filtered_df["tier1"].sum(), filtered_df["tier2"].sum(), filtered_df["tier3"].sum()]
-    })
-    
-    fig_donut = px.pie(
-        tier_data,
-        names="Tier",
-        values="Demands",
-        hole=0.55,
-        color="Tier",
-        color_discrete_map={
-            "Tier 1 (community alone)": "#fbbf24",
-            "Tier 2 (Minor Support)": "#712416",
-            "Tier 3 (Convergence)": "#38bdf8"
-        },
-        title="Implementation Tier Convergence"
-    )
-    
-    fig_donut.update_layout(
-        plot_bgcolor="#151827",
-        paper_bgcolor="#151827",
-        font=dict(color="#f8fafc", size=11),
-        margin=dict(l=10, r=10, t=35, b=10),
-        height=260,
-        legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5)
-    )
-    st.plotly_chart(fig_donut, use_container_width=True)
+    if not filtered_df.empty:
+        element_counts = filtered_df["dominantElement"].value_counts().reset_index()
+        element_counts.columns = ["Element", "Villages"]
+        
+        fig_bar = px.bar(
+            element_counts,
+            x="Villages",
+            y="Element",
+            orientation="h",
+            color="Element",
+            color_discrete_map=ELEMENT_COLORS,
+            title="Dominant LCAT Life Elements across Panchayats"
+        )
+        
+        fig_bar.update_layout(
+            plot_bgcolor="#151827",
+            paper_bgcolor="#151827",
+            font=dict(color="#f8fafc", size=11),
+            showlegend=False,
+            margin=dict(l=10, r=10, t=35, b=10),
+            height=260,
+            xaxis=dict(gridcolor="#343a4d"),
+            yaxis=dict(gridcolor="#343a4d", categoryorder="total ascending")
+        )
+        st.plotly_chart(fig_bar, use_container_width=True)
+        
+        # 2. Tiers Breakdown Donut Chart
+        tier_data = pd.DataFrame({
+            "Tier": ["Tier 1 (community alone)", "Tier 2 (Minor Support)", "Tier 3 (Convergence)"],
+            "Demands": [filtered_df["tier1"].sum(), filtered_df["tier2"].sum(), filtered_df["tier3"].sum()]
+        })
+        
+        fig_donut = px.pie(
+            tier_data,
+            names="Tier",
+            values="Demands",
+            hole=0.55,
+            color="Tier",
+            color_discrete_map={
+                "Tier 1 (community alone)": "#fbbf24",
+                "Tier 2 (Minor Support)": "#712416",
+                "Tier 3 (Convergence)": "#38bdf8"
+            },
+            title="Implementation Tier Convergence"
+        )
+        
+        fig_donut.update_layout(
+            plot_bgcolor="#151827",
+            paper_bgcolor="#151827",
+            font=dict(color="#f8fafc", size=11),
+            margin=dict(l=10, r=10, t=35, b=10),
+            height=260,
+            legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5)
+        )
+        st.plotly_chart(fig_donut, use_container_width=True)
+    else:
+        st.info("No data available for the selected filters.")
 
 
 # -----------------------------------------------------------------------------
 # 8. VILLAGE DATA TABLE
 # -----------------------------------------------------------------------------
 st.markdown("### Gram Panchayat Action Registry")
-st.dataframe(
-    filtered_df[["name", "district", "block", "totalDemand", "tier1", "tier2", "tier3", "dominantElement", "riskScore"]],
-    use_container_width=True,
-    hide_index=True,
-    column_config={
-        "name": "Village Name",
-        "district": "District",
-        "block": "Block",
-        "totalDemand": st.column_config.ProgressColumn("Total Demands", format="%d", min_value=0, max_value=100),
-        "tier1": "T1 (Local)",
-        "tier2": "T2 (Minor)",
-        "tier3": "T3 (Convergence)",
-        "dominantElement": "Dominant LCAT Element",
-        "riskScore": st.column_config.NumberColumn("Risk Index", format="%.1f")
-    }
-)
+if not filtered_df.empty:
+    st.dataframe(
+        filtered_df[["name", "district", "block", "totalDemand", "tier1", "tier2", "tier3", "dominantElement"]],
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "name": "Village Name",
+            "district": "District",
+            "block": "Block",
+            "totalDemand": st.column_config.ProgressColumn("Total Demands", format="%d", min_value=0, max_value=100),
+            "tier1": "T1 (Local)",
+            "tier2": "T2 (Minor)",
+            "tier3": "T3 (Convergence)",
+            "dominantElement": "Dominant LCAT Element"
+        }
+    )
+else:
+    st.info("Please adjust filters or ensure data is uploaded to view village registry.")
