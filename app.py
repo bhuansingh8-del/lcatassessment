@@ -27,6 +27,11 @@ st.markdown("""
         font-family: 'Inter', sans-serif;
     }
     
+    /* Fix for text rendering black in Streamlit's Light Mode */
+    .stApp p, .stApp h1, .stApp h2, .stApp h3, .stApp h4, .stApp h5, .stApp h6, .stApp label {
+        color: #f8fafc !important;
+    }
+    
     /* Top Header Bar */
     .header-banner {
         background: linear-gradient(90deg, #712416 0%, #54190F 100%);
@@ -213,7 +218,7 @@ else:
 st.markdown(f"""
 <div class="header-banner">
     <div>
-        <h1 class="header-title">🧭 Landscape Assessment Atlas</h1>
+        <h1 class="header-title">Landscape Assessment Atlas</h1>
         <p class="header-subtitle">Climate Risk & Community Demand &nbsp;·&nbsp; {selected_state} › {selected_district}</p>
     </div>
     <div>
@@ -254,7 +259,7 @@ with col2:
 with col3:
     st.markdown(f"""
     <div class="metric-card">
-        <div style="font-size:0.8rem; color:#94a3b8; font-weight:600;">TIER 1 (STANDALONE)</div>
+        <div style="font-size:0.8rem; color:#94a3b8; font-weight:600;">TIER 1 (COMMUNITY ALONE)</div>
         <div class="metric-value">{t1_demands}</div>
         <div style="font-size:0.75rem; color:#cbd5e1;">Immediate Local Delivery</div>
     </div>
@@ -278,7 +283,7 @@ st.markdown("<br>", unsafe_allow_html=True)
 map_col, analytics_col = st.columns([1.6, 1.0])
 
 with map_col:
-    st.markdown("### 🗺️ Geospatial Demand & Landscape Map")
+    st.markdown("### Geospatial Demand & Landscape Map")
     
     # Calculate Center
     if selected_district in DISTRICT_CENTERS:
@@ -378,7 +383,7 @@ with map_col:
 # 7. ANALYTICS & LCAT CHARTS (PLOTLY)
 # -----------------------------------------------------------------------------
 with analytics_col:
-    st.markdown("### 📊 LCAT Elements & Risk Breakdown")
+    st.markdown("### LCAT Elements & Risk Breakdown")
     
     # 1. Demand by LCAT Life Element Bar Chart
     element_counts = filtered_df["dominantElement"].value_counts().reset_index()
@@ -408,7 +413,7 @@ with analytics_col:
     
     # 2. Tiers Breakdown Donut Chart
     tier_data = pd.DataFrame({
-        "Tier": ["Tier 1 (Standalone)", "Tier 2 (Minor Support)", "Tier 3 (Convergence)"],
+        "Tier": ["Tier 1 (community alone)", "Tier 2 (Minor Support)", "Tier 3 (Convergence)"],
         "Demands": [filtered_df["tier1"].sum(), filtered_df["tier2"].sum(), filtered_df["tier3"].sum()]
     })
     
@@ -419,7 +424,7 @@ with analytics_col:
         hole=0.55,
         color="Tier",
         color_discrete_map={
-            "Tier 1 (Standalone)": "#fbbf24",
+            "Tier 1 (community alone)": "#fbbf24",
             "Tier 2 (Minor Support)": "#712416",
             "Tier 3 (Convergence)": "#38bdf8"
         },
@@ -440,7 +445,7 @@ with analytics_col:
 # -----------------------------------------------------------------------------
 # 8. VILLAGE DATA TABLE
 # -----------------------------------------------------------------------------
-st.markdown("### 📋 Gram Panchayat Action Registry")
+st.markdown("### Gram Panchayat Action Registry")
 st.dataframe(
     filtered_df[["name", "district", "block", "totalDemand", "tier1", "tier2", "tier3", "dominantElement", "riskScore"]],
     use_container_width=True,
