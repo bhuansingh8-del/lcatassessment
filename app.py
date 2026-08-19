@@ -798,15 +798,15 @@ with analytics_col:
             themes_list = theme_pivot.index.tolist()
             n_themes = len(themes_list)
             
-            # Formulate grid size (2 columns)
-            cols = 2
-            rows = max(1, (n_themes + 1) // cols)
+            # Formulate grid size (4 columns, 2 rows to maximize space)
+            cols = 4
+            rows = max(1, (n_themes + cols - 1) // cols)
             
             fig_theme = make_subplots(
                 rows=rows, cols=cols,
                 specs=[[{'type': 'domain'}] * cols] * rows,
                 subplot_titles=themes_list,
-                vertical_spacing=0.25
+                vertical_spacing=0.15
             )
             
             for i, theme in enumerate(themes_list):
@@ -836,15 +836,16 @@ with analytics_col:
                 plot_bgcolor="rgba(0,0,0,0)",
                 paper_bgcolor="rgba(0,0,0,0)",
                 font=dict(color="#1e293b", size=11),
-                margin=dict(l=10, r=10, t=50, b=60),
-                height=200 * rows + 60,
+                margin=dict(l=10, r=10, t=50, b=90),
+                height=450,
                 showlegend=True,
-                legend=dict(orientation="h", yanchor="bottom", y=-0.15 / max(1, rows), xanchor="center", x=0.5, font=dict(color="#475569"), title="")
+                legend=dict(orientation="h", yanchor="top", y=-0.15, xanchor="center", x=0.5, font=dict(color="#475569"), title="")
             )
             
             # Shift generated subplot titles to sit directly underneath each ring
             for annotation in fig_theme['layout']['annotations']:
-                annotation['y'] -= (1.0 / rows) * 1.15
+                annotation['yanchor'] = 'top'
+                annotation['y'] -= 0.48
                 annotation['font'] = dict(size=11, color="#475569")
                 
             st.plotly_chart(fig_theme, use_container_width=True, config={'displayModeBar': False})
@@ -895,15 +896,16 @@ with analytics_col:
                     plot_bgcolor="rgba(0,0,0,0)",
                     paper_bgcolor="rgba(0,0,0,0)",
                     font=dict(color="#1e293b", size=11),
-                    margin=dict(l=10, r=10, t=50, b=60),
+                    margin=dict(l=10, r=10, t=50, b=90),
                     height=280,
                     showlegend=True,
-                    legend=dict(orientation="h", yanchor="bottom", y=-0.3, xanchor="center", x=0.5, font=dict(color="#475569"), title="")
+                    legend=dict(orientation="h", yanchor="top", y=-0.3, xanchor="center", x=0.5, font=dict(color="#475569"), title="")
                 )
                 
                 # Shift titles underneath rings
                 for annotation in fig_pillar['layout']['annotations']:
-                    annotation['y'] -= 1.15
+                    annotation['yanchor'] = 'top'
+                    annotation['y'] -= 1.05
                     annotation['font'] = dict(size=12, color="#475569")
                     
                 st.plotly_chart(fig_pillar, use_container_width=True, config={'displayModeBar': False})
