@@ -12,8 +12,8 @@ from typing import Dict, Any, List, Optional
 # 1. PAGE CONFIGURATION & CUSTOM CSS (Brand Colors: #712416 & #151827)
 # -----------------------------------------------------------------------------
 st.set_page_config(
-    page_title="Landscape Assessment Atlas",
-    page_icon="🧭",
+    page_title="Landscape Assessment",
+    page_icon="",
     layout="wide",
     initial_sidebar_state="expanded",
 )
