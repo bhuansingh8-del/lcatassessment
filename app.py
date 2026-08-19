@@ -279,6 +279,104 @@ def get_demand_color(demand: int) -> str:
 
 
 # -----------------------------------------------------------------------------
+# 2.5 POPULATION RASTER PROCESSOR
+# -----------------------------------------------------------------------------
+@st.cache_data(show_spinner=False)
+def get_population_raster_overlay(raster_path: str, bounds: Optional[List[List[float]]] = None):
+    """
+    Reads a GeoTIFF raster window based on target bounds, 
+    applies a colormap to actual population values, and returns base64 image + bounds.
+    Requires: rasterio, matplotlib
+    """
+    try:
+        import rasterio
+        from rasterio.windows import from_bounds
+        from rasterio.enums import Resampling
+        import matplotlib.pyplot as plt
+        import matplotlib.colors as mcolors
+        from PIL import Image
+        from io import BytesIO
+        
+        with rasterio.open(raster_path) as src:
+            if bounds:
+                min_lat, min_lon = bounds[0]
+                max_lat, max_lon = bounds[1]
+                
+                # Fetch only the pixels intersecting the map viewport
+                window = from_bounds(min_lon, min_lat, max_lon, max_lat, src.transform)
+                window = window.intersection(rasterio.windows.Window(0, 0, src.width, src.height))
+                
+                if window.width <= 0 or window.height <= 0:
+                    return None, None
+                    
+                # Constrain max resolution for performant browser rendering
+                out_shape = (1, int(window.height), int(window.width))
+                max_dim = 1200
+                scale = 1.0
+                if out_shape[1] > max_dim or out_shape[2] > max_dim:
+                    scale = max_dim / max(out_shape[1], out_shape[2])
+                    out_shape = (1, int(out_shape[1] * scale), int(out_shape[2] * scale))
+                    
+                data = src.read(1, window=window, out_shape=out_shape, resampling=Resampling.bilinear)
+                
+                # Accurately project bounds to fit downscaled overlay
+                win_transform = src.window_transform(window)
+                if scale != 1.0:
+                    win_transform = win_transform * win_transform.scale(
+                        (window.width / out_shape[2]),
+                        (window.height / out_shape[1])
+                    )
+                    
+                calc_bounds = rasterio.windows.bounds(
+                    rasterio.windows.Window(0, 0, out_shape[2], out_shape[1]), 
+                    win_transform
+                )
+                overlay_bounds = [[calc_bounds[1], calc_bounds[0]], [calc_bounds[3], calc_bounds[2]]]
+            else:
+                # Optimized state-level fallback: decimated overview
+                scale = 0.05 
+                out_shape = (1, int(src.height * scale), int(src.width * scale))
+                data = src.read(1, out_shape=out_shape, resampling=Resampling.bilinear)
+                overlay_bounds = [[src.bounds.bottom, src.bounds.left], [src.bounds.top, src.bounds.right]]
+                
+            if src.nodata is not None:
+                data = np.ma.masked_equal(data, src.nodata)
+                
+            # Filter zero population blocks out dynamically to keep the map clean
+            data = np.ma.masked_less_equal(data, 0)
+            
+            valid_data = data.compressed()
+            if len(valid_data) == 0:
+                return None, None
+                
+            # Normalize colors around 98th percentile to prevent a few dense pixels skewing rendering
+            vmax = np.percentile(valid_data, 98)
+            vmin = valid_data.min()
+            
+            # Utilizing a subtle Red/Purple colormap (RdPu) that coordinates with brand typography 
+            # PowerNorm ensures lighter visibility for rural areas without dominating screen
+            cmap = plt.get_cmap('RdPu')
+            norm = mcolors.PowerNorm(gamma=0.4, vmin=vmin, vmax=vmax)
+            
+            rgba = cmap(norm(data))
+            rgba[data.mask] = 0 # Strictly transparent nodata & zerodata 
+            
+            img = Image.fromarray((rgba * 255).astype(np.uint8))
+            buffered = BytesIO()
+            img.save(buffered, format="PNG")
+            encoded = base64.b64encode(buffered.getvalue()).decode()
+            
+            return f"data:image/png;base64,{encoded}", overlay_bounds
+            
+    except ImportError:
+        st.error("Please run `pip install rasterio matplotlib` to process the dynamic population raster layer.")
+        return None, None
+    except Exception as e:
+        st.error(f"Failed to process population raster: {e}")
+        return None, None
+
+
+# -----------------------------------------------------------------------------
 # 3. SIDEBAR & GEOGRAPHIC SELECTION
 # -----------------------------------------------------------------------------
 with st.sidebar:
@@ -333,6 +431,17 @@ with st.sidebar:
             type=["png", "jpg", "jpeg", "webp"],
             help="Upload a transparent district-cut geospatial PNG."
         )
+
+    st.markdown("---")
+    
+    # -------------------------------------------------------------------------
+    # POPULATION DENSITY LAYER (OPTIONAL)
+    # -------------------------------------------------------------------------
+    st.subheader("Population Layer")
+    pop_layer_enabled = st.toggle("Enable Population Density (1km)", value=False, help="Display actual values from 2020 Population Density COG.")
+    pop_opacity = 0.5
+    if pop_layer_enabled:
+        pop_opacity = st.slider("Population Layer Opacity", min_value=0.1, max_value=1.0, value=0.5, step=0.05)
 
 # Filter Data
 if selected_district != "All Districts":
@@ -426,6 +535,36 @@ with map_col:
         control_scale=True
     )
     
+    # Render Population Density Raster if Enabled
+    if pop_layer_enabled:
+        pop_raster_path = "data/population/ind_pd_2020_1km_COG.tif"
+        if os.path.exists(pop_raster_path):
+            pop_bounds = None
+            if selected_district in DISTRICT_CENTERS:
+                pop_bounds = DISTRICT_CENTERS[selected_district]["bounds"]
+            elif not filtered_df.empty:
+                # Buffer viewport based on active filtered points
+                pop_bounds = [
+                    [filtered_df["lat"].min() - 1.0, filtered_df["lng"].min() - 1.0],
+                    [filtered_df["lat"].max() + 1.0, filtered_df["lng"].max() + 1.0]
+                ]
+            
+            with st.spinner("Processing Population Raster Window..."):
+                pop_img_source, calc_bounds = get_population_raster_overlay(pop_raster_path, pop_bounds)
+                
+            if pop_img_source and calc_bounds:
+                folium.raster_layers.ImageOverlay(
+                    name="Population Density (2020)",
+                    image=pop_img_source,
+                    bounds=calc_bounds,
+                    opacity=pop_opacity,
+                    interactive=False,
+                    cross_origin=False,
+                    zindex=200 # Appears below the district PNG imagery (zindex:250) but over the basemap
+                ).add_to(m)
+        else:
+            st.warning(f"Population raster file not found at: {pop_raster_path}")
+            
     # Render District PNG Imagery if Enabled
     if imagery_enabled:
         target_dist = selected_district if selected_district != "All Districts" else "Bastar"
