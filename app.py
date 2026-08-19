@@ -686,65 +686,166 @@ with map_col:
 with analytics_col:
     st.markdown("### LCAT Elements & Risk Breakdown")
     
-    # 1. Demand by LCAT Life Element Bar Chart
-    if not filtered_df.empty:
-        element_counts = filtered_df["dominantElement"].value_counts().reset_index()
-        element_counts.columns = ["Element", "Villages"]
+    # Localized function to fetch raw demand rows strictly for these charts, 
+    # ensuring existing village-level dataframe & map logic is completely untouched.
+    @st.cache_data
+    def get_raw_chart_data():
+        data_dir = "data"
+        raw_df = pd.DataFrame()
+        if os.path.exists(data_dir):
+            all_files = glob.glob(os.path.join(data_dir, "*.xlsx")) + glob.glob(os.path.join(data_dir, "*.csv"))
+            gpdp_files = [f for f in all_files if "GPDP" in os.path.basename(f) or "gpdp" in os.path.basename(f).lower()]
+            if gpdp_files:
+                df_list = []
+                for f in gpdp_files:
+                    try:
+                        df_list.append(pd.read_csv(f) if f.endswith('.csv') else pd.read_excel(f))
+                    except Exception:
+                        pass
+                if df_list:
+                    raw_df = pd.concat(df_list, ignore_index=True)
+        return raw_df
         
-        fig_bar = px.bar(
-            element_counts,
-            x="Villages",
-            y="Element",
-            orientation="h",
-            color="Element",
-            color_discrete_map=ELEMENT_COLORS,
-            title="Dominant LCAT Life Elements across Panchayats"
-        )
-        
-        # Transparent background, clean light-grey grid lines
-        fig_bar.update_layout(
-            plot_bgcolor="rgba(0,0,0,0)",
-            paper_bgcolor="rgba(0,0,0,0)",
-            font=dict(color="#1e293b", size=11),
-            showlegend=False,
-            margin=dict(l=10, r=10, t=35, b=10),
-            height=260,
-            xaxis=dict(gridcolor="#e2e8f0", title_font=dict(color="#64748b"), tickfont=dict(color="#64748b")),
-            yaxis=dict(gridcolor="#e2e8f0", categoryorder="total ascending", tickfont=dict(color="#475569"))
-        )
-        st.plotly_chart(fig_bar, use_container_width=True)
-        
-        # 2. Tiers Breakdown Donut Chart
-        tier_data = pd.DataFrame({
-            "Tier": ["Tier 1 (community alone)", "Tier 2 (Minor Support)", "Tier 3 (Convergence)"],
-            "Demands": [filtered_df["tier1"].sum(), filtered_df["tier2"].sum(), filtered_df["tier3"].sum()]
-        })
-        
-        fig_donut = px.pie(
-            tier_data,
-            names="Tier",
-            values="Demands",
-            hole=0.55,
-            color="Tier",
-            color_discrete_map={
-                "Tier 1 (community alone)": "#d97706",
-                "Tier 2 (Minor Support)": "#712416",
-                "Tier 3 (Convergence)": "#0ea5e9"
-            },
-            title="Implementation Tier Convergence"
-        )
-        
-        fig_donut.update_layout(
-            plot_bgcolor="rgba(0,0,0,0)",
-            paper_bgcolor="rgba(0,0,0,0)",
-            font=dict(color="#1e293b", size=11),
-            margin=dict(l=10, r=10, t=35, b=10),
-            height=260,
-            legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5, font=dict(color="#475569"))
-        )
-        st.plotly_chart(fig_donut, use_container_width=True)
+    raw_df = get_raw_chart_data()
+    
+    if not raw_df.empty:
+        # Apply the same geographic filters active on the dashboard
+        if selected_state != "Unknown" and 'State' in raw_df.columns:
+            raw_df = raw_df[raw_df['State'] == selected_state]
+        if selected_district != "All Districts" and 'District' in raw_df.columns:
+            raw_df = raw_df[raw_df['District'] == selected_district]
+            
+        # Clean Theme formatting matching existing logic
+        if 'Theme' in raw_df.columns:
+            raw_df['Clean_Theme'] = raw_df['Theme'].astype(str).apply(lambda x: x.split(')')[-1].strip() if ')' in x else x)
+        else:
+            raw_df['Clean_Theme'] = 'Unknown'
+            
+        # Standardize Tier Definitions
+        if 'Tier' in raw_df.columns:
+            raw_df['Clean_Tier'] = raw_df['Tier'].astype(str).apply(
+                lambda x: 'Tier 1 (community alone)' if 'Tier 1' in x else (
+                    'Tier 2 (Minor Support)' if 'Tier 2' in x else (
+                    'Tier 3 (Convergence)' if 'Tier 3' in x else 'Unknown'
+                ))
+            )
+        else:
+            raw_df['Clean_Tier'] = 'Unknown'
+            
+        # Retrieve Pillar data directly from Excel
+        pillar_col = 'Pillars' if 'Pillars' in raw_df.columns else ('Pillar' if 'Pillar' in raw_df.columns else None)
+        if pillar_col:
+            raw_df['Clean_Pillar'] = raw_df[pillar_col].astype(str).fillna('Unknown')
+        else:
+            raw_df['Clean_Pillar'] = 'Unknown'
+            
+        # Existing color mapping
+        tier_colors = {
+            "Tier 1 (community alone)": "#d97706",
+            "Tier 2 (Minor Support)": "#712416",
+            "Tier 3 (Convergence)": "#0ea5e9"
+        }
+        tier_order = ["Tier 1 (community alone)", "Tier 2 (Minor Support)", "Tier 3 (Convergence)"]
+
+        # -------------------------------------------------------------
+        # Visualization 1: Tiers across 8 Themes
+        # -------------------------------------------------------------
+        theme_tier_df = raw_df[raw_df['Clean_Tier'] != 'Unknown'].groupby(['Clean_Theme', 'Clean_Tier']).size().reset_index(name='Count')
+        if not theme_tier_df.empty:
+            theme_pivot = theme_tier_df.pivot(index='Clean_Theme', columns='Clean_Tier', values='Count').fillna(0)
+            theme_pivot['Total'] = theme_pivot.sum(axis=1)
+            theme_pivot = theme_pivot.sort_values('Total', ascending=True)
+            
+            plot_df_theme = theme_pivot.drop(columns=['Total']).reset_index().melt(id_vars='Clean_Theme', var_name='Tier', value_name='Count')
+            
+            fig_theme = px.bar(
+                plot_df_theme,
+                y='Clean_Theme',
+                x='Count',
+                color='Tier',
+                orientation='h',
+                color_discrete_map=tier_colors,
+                category_orders={"Clean_Theme": theme_pivot.index.tolist(), "Tier": tier_order},
+                title="Tiers across 8 Themes"
+            )
+            
+            # Annotate total values to the right side of the bars
+            max_val = theme_pivot['Total'].max()
+            for idx, row in theme_pivot.iterrows():
+                fig_theme.add_annotation(
+                    x=row['Total'] + (max_val * 0.03),
+                    y=idx,
+                    text=f"<b>{int(row['Total'])}</b>",
+                    showarrow=False,
+                    xanchor='left',
+                    font=dict(size=12, color="#1e293b")
+                )
+            
+            fig_theme.update_layout(
+                barmode='stack',
+                plot_bgcolor="rgba(0,0,0,0)",
+                paper_bgcolor="rgba(0,0,0,0)",
+                font=dict(color="#1e293b", size=11),
+                margin=dict(l=10, r=40, t=35, b=10),
+                height=320,
+                xaxis=dict(visible=False, showgrid=False), # Hide axis for cleaner look (data is on labels)
+                yaxis=dict(title="", tickfont=dict(color="#475569")),
+                legend=dict(orientation="h", yanchor="bottom", y=-0.15, xanchor="center", x=0.5, font=dict(color="#475569"), title="")
+            )
+            st.plotly_chart(fig_theme, use_container_width=True)
+
+        # -------------------------------------------------------------
+        # Visualization 2: Tiers across 3 Pillars
+        # -------------------------------------------------------------
+        if pillar_col:
+            # Filter specifically to ignore unknown/blank pillars
+            pillar_tier_df = raw_df[(raw_df['Clean_Tier'] != 'Unknown') & (raw_df['Clean_Pillar'] != 'Unknown') & (raw_df['Clean_Pillar'] != 'nan')].groupby(['Clean_Pillar', 'Clean_Tier']).size().reset_index(name='Count')
+            
+            if not pillar_tier_df.empty:
+                pillar_pivot = pillar_tier_df.pivot(index='Clean_Pillar', columns='Clean_Tier', values='Count').fillna(0)
+                pillar_pivot['Total'] = pillar_pivot.sum(axis=1)
+                pillar_pivot = pillar_pivot.sort_values('Total', ascending=True)
+                
+                plot_df_pillar = pillar_pivot.drop(columns=['Total']).reset_index().melt(id_vars='Clean_Pillar', var_name='Tier', value_name='Count')
+                
+                fig_pillar = px.bar(
+                    plot_df_pillar,
+                    y='Clean_Pillar',
+                    x='Count',
+                    color='Tier',
+                    orientation='h',
+                    color_discrete_map=tier_colors,
+                    category_orders={"Clean_Pillar": pillar_pivot.index.tolist(), "Tier": tier_order},
+                    title="Tiers across Pillars"
+                )
+                
+                max_val_pillar = pillar_pivot['Total'].max()
+                for idx, row in pillar_pivot.iterrows():
+                    fig_pillar.add_annotation(
+                        x=row['Total'] + (max_val_pillar * 0.03),
+                        y=idx,
+                        text=f"<b>{int(row['Total'])}</b>",
+                        showarrow=False,
+                        xanchor='left',
+                        font=dict(size=12, color="#1e293b")
+                    )
+                    
+                fig_pillar.update_layout(
+                    barmode='stack',
+                    plot_bgcolor="rgba(0,0,0,0)",
+                    paper_bgcolor="rgba(0,0,0,0)",
+                    font=dict(color="#1e293b", size=11),
+                    margin=dict(l=10, r=40, t=35, b=10),
+                    height=200,
+                    xaxis=dict(visible=False, showgrid=False),
+                    yaxis=dict(title="", tickfont=dict(color="#475569")),
+                    showlegend=False # Legend already visible from the first chart
+                )
+                st.plotly_chart(fig_pillar, use_container_width=True)
+            else:
+                st.info("No mapped pillar data available for this selection.")
     else:
-        st.info("No data available for the selected filters.")
+        st.info("No raw data available for the selected filters to generate tier breakdowns.")
 
 
 # -----------------------------------------------------------------------------
