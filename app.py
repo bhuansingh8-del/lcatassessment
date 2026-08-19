@@ -15,7 +15,7 @@ from typing import Dict, Any, List, Optional
 # 1. PAGE CONFIGURATION & CUSTOM CSS (Brand Colors: #712416 & #151827)
 # -----------------------------------------------------------------------------
 st.set_page_config(
-    page_title="Landscape ",
+    page_title="Landscape Assesment",
     page_icon="",
     layout="wide",
     initial_sidebar_state="expanded",
