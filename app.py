@@ -375,6 +375,40 @@ def get_population_raster_overlay(raster_path: str, bounds: Optional[List[List[f
         st.error(f"Failed to process population raster: {e}")
         return None, None
 
+@st.cache_data(show_spinner=False)
+def get_population_stats(raster_path: str, bounds: List[List[float]]):
+    """Calculates total and mean population from a specific bounding box in the raster."""
+    try:
+        import rasterio
+        from rasterio.windows import from_bounds
+        import numpy as np
+        
+        with rasterio.open(raster_path) as src:
+            min_lat, min_lon = bounds[0]
+            max_lat, max_lon = bounds[1]
+            
+            # Fetch only the pixels intersecting the map viewport bounds
+            window = from_bounds(min_lon, min_lat, max_lon, max_lat, src.transform)
+            window = window.intersection(rasterio.windows.Window(0, 0, src.width, src.height))
+            
+            if window.width <= 0 or window.height <= 0:
+                return 0, 0.0
+                
+            data = src.read(1, window=window)
+            
+            if src.nodata is not None:
+                data = np.ma.masked_equal(data, src.nodata)
+                
+            # Exclude zero or negative background values
+            data = np.ma.masked_less_equal(data, 0)
+            valid_data = data.compressed()
+            
+            if len(valid_data) == 0:
+                return 0, 0.0
+                
+            return int(valid_data.sum()), float(valid_data.mean())
+    except Exception:
+        return 0, 0.0
 
 # -----------------------------------------------------------------------------
 # 3. SIDEBAR & GEOGRAPHIC SELECTION
@@ -453,11 +487,22 @@ else:
 # -----------------------------------------------------------------------------
 # 4. MAIN HEADER BANNER
 # -----------------------------------------------------------------------------
+# Calculate district population stats dynamically if a specific district is selected
+pop_stats_html = ""
+if selected_district != "All Districts":
+    pop_raster_path = "data/population/ind_pd_2020_1km_COG.tif"
+    if os.path.exists(pop_raster_path) and selected_district in DISTRICT_CENTERS:
+        dist_bounds = DISTRICT_CENTERS[selected_district]["bounds"]
+        tot_pop, mean_pop = get_population_stats(pop_raster_path, dist_bounds)
+        if tot_pop > 0:
+            pop_stats_html = f'<p class="header-subtitle" style="margin-top:6px; font-size:0.8rem; color:#cbd5e1;">👥 <b>Est. Population (Raster Box):</b> {tot_pop:,.0f} &nbsp;|&nbsp; <b>Mean Density:</b> {mean_pop:,.1f} / 1km cell</p>'
+
 st.markdown(f"""
 <div class="header-banner">
     <div>
         <h1 class="header-title">Landscape Assessment Atlas</h1>
         <p class="header-subtitle">Climate Risk & Community Demand &nbsp;·&nbsp; {selected_state} › {selected_district}</p>
+        {pop_stats_html}
     </div>
 </div>
 """, unsafe_allow_html=True)
