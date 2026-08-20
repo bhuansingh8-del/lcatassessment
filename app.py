@@ -448,10 +448,10 @@ def show_theme_overlay(theme: str, state: str, district: str, village: str):
                 df_gpdp = pd.DataFrame()
                 
             if not df_gpdp.empty:
-            total_actions = len(df_gpdp)
-            st.markdown(f"<div style='font-size: 0.95rem; color: #475569; margin-bottom: 20px;'><b>{total_actions}</b> actions</div>", unsafe_allow_html=True)
+             total_actions = len(df_gpdp)
+             st.markdown(f"<div style='font-size: 0.95rem; color: #475569; margin-bottom: 20px;'><b>{total_actions}</b> actions</div>", unsafe_allow_html=True)
             
-            tier_groups = {
+             tier_groups = {
                 "Tier 1 — Community Led": {"color": "#d97706", "actions": []},
                 "Tier 2 — Minor Support": {"color": "#712416", "actions": []},
                 "Tier 3 — External Support & Convergence": {"color": "#0ea5e9", "actions": []},
