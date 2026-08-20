@@ -983,93 +983,76 @@ if dashboard_mode == "LCAT & GPDP":
                 plot_df_theme = theme_pivot.drop(columns=['Total']).reset_index().melt(id_vars='Clean_Theme', var_name='Tier', value_name='Count')
                 
                 themes_list = theme_pivot.index.tolist()
-                n_themes = len(themes_list)
                 
-                # Formulate grid size (4 columns, 2 rows to maximize space)
-                cols = 4
-                rows = max(1, (n_themes + cols - 1) // cols)
+                st.markdown("<div style='font-size:14px; color:#1e293b; font-family:sans-serif; font-weight:600; margin-bottom:15px; margin-top:10px;'>Tiers across Themes</div>", unsafe_allow_html=True)
                 
-                fig_theme = make_subplots(
-                    rows=rows, cols=cols,
-                    specs=[[{'type': 'domain'}] * cols] * rows,
-                    subplot_titles=themes_list,
-                    vertical_spacing=0.15
-                )
+                selected_theme_to_open = None
                 
-                for i, theme in enumerate(themes_list):
-                    r = i // cols + 1
-                    c = i % cols + 1
-                    theme_data = plot_df_theme[plot_df_theme['Clean_Theme'] == theme]
-                    theme_data = theme_data[theme_data['Count'] > 0] # Filter out 0 for cleaner UI
-                    
-                    colors = [tier_colors.get(t, "#cbd5e1") for t in theme_data['Tier']]
-                    total = theme_pivot.loc[theme, 'Total']
-                    
-                    fig_theme.add_trace(go.Pie(
-                        labels=theme_data['Tier'],
-                        values=theme_data['Count'],
-                        customdata=[theme] * len(theme_data),
-                        hole=0.68,
-                        title={'text': f"<b>{int(total)}</b>", 'font': {'size': 15, 'color': '#1e293b'}},
-                        marker=dict(colors=colors, line=dict(color='#ffffff', width=1.5)),
-                        textinfo='none',
-                        hoverinfo='label+percent+value',
-                        name=theme,
-                        sort=False
-                    ), row=r, col=c)
-                    
-                fig_theme.update_layout(
-                    clickmode="event+select",
-                    title_text="Tiers across Themes",
-                    title_font=dict(size=14, color="#1e293b", family="sans-serif"),
-                    plot_bgcolor="rgba(0,0,0,0)",
-                    paper_bgcolor="rgba(0,0,0,0)",
-                    font=dict(color="#1e293b", size=11),
-                    margin=dict(l=10, r=10, t=50, b=90),
-                    height=450,
-                    showlegend=True,
-                    legend=dict(orientation="h", yanchor="top", y=-0.15, xanchor="center", x=0.5, font=dict(color="#475569"), title="")
-                )
-                
-                # Shift generated subplot titles to sit directly underneath each ring
-                for annotation in fig_theme['layout']['annotations']:
-                    annotation['yanchor'] = 'top'
-                    annotation['y'] -= 0.48
-                    annotation['align'] = 'center'
-                    # Wrap long titles to a maximum of 22 characters to force 2 neat lines
-                    annotation['text'] = "<br>".join(textwrap.wrap(annotation['text'], width=22))
-                    annotation['font'] = dict(size=11, color="#475569")
-                    
-                # Streamlit >= 1.35 supports on_select for chart clicking
-                try:
-                    theme_event = st.plotly_chart(fig_theme, use_container_width=True, config={'displayModeBar': False}, on_select="rerun")
-                    if theme_event and hasattr(theme_event, "selection"):
-                        pts = theme_event.selection.points
-                        if pts and len(pts) > 0:
-                            pt = pts[0]
-                            selected_theme = None
+                # Render each existing ring as its own independent interactive element in a 4x2 grid
+                for row_idx in range(0, len(themes_list), 4):
+                    row_themes = themes_list[row_idx:row_idx+4]
+                    cols = st.columns(4)
+                    for col_idx, theme in enumerate(row_themes):
+                        with cols[col_idx]:
+                            theme_data = plot_df_theme[plot_df_theme['Clean_Theme'] == theme]
+                            theme_data = theme_data[theme_data['Count'] > 0]
                             
-                            # Safely extract robust identifier from either dict or attribute structures
-                            if isinstance(pt, dict):
-                                val = pt.get("customdata")
-                                if val is not None:
-                                    selected_theme = val[0] if isinstance(val, list) else val
-                                if not selected_theme:
-                                    selected_theme = pt.get("trace_name")
-                            else:
-                                if hasattr(pt, "customdata") and pt.customdata is not None:
-                                    selected_theme = pt.customdata[0] if isinstance(pt.customdata, list) else pt.customdata
-                                if not selected_theme and hasattr(pt, "trace_name"):
-                                    selected_theme = getattr(pt, "trace_name")
-                                    
-                            if selected_theme:
-                                show_theme_overlay(selected_theme, selected_state, selected_district, selected_village)
-                except TypeError:
-                    # Fallback for Streamlit < 1.35
-                    st.plotly_chart(fig_theme, use_container_width=True, config={'displayModeBar': False})
-                except Exception:
-                    # Fail gracefully for unexpected environment states
-                    pass
+                            colors = [tier_colors.get(t, "#cbd5e1") for t in theme_data['Tier']]
+                            total = theme_pivot.loc[theme, 'Total']
+                            
+                            fig_single = go.Figure(go.Pie(
+                                labels=theme_data['Tier'],
+                                values=theme_data['Count'],
+                                hole=0.68,
+                                marker=dict(colors=colors, line=dict(color='#ffffff', width=1.5)),
+                                textinfo='none',
+                                hoverinfo='label+percent+value',
+                                sort=False
+                            ))
+                            
+                            wrapped_text = "<br>".join(textwrap.wrap(theme, width=22))
+                            
+                            fig_single.update_layout(
+                                clickmode="event+select",
+                                showlegend=False,
+                                plot_bgcolor="rgba(0,0,0,0)",
+                                paper_bgcolor="rgba(0,0,0,0)",
+                                margin=dict(l=0, r=0, t=10, b=60),
+                                height=220,
+                                annotations=[
+                                    dict(text=f"<b>{int(total)}</b>", x=0.5, y=0.5, font_size=15, font_color='#1e293b', showarrow=False, xanchor="center", yanchor="middle"),
+                                    dict(text=wrapped_text, x=0.5, y=-0.25, font_size=11, font_color="#475569", showarrow=False, align="center", xanchor="center", yanchor="top")
+                                ]
+                            )
+                            
+                            try:
+                                event = st.plotly_chart(fig_single, use_container_width=True, config={'displayModeBar': False}, on_select="rerun", key=f"ring_{theme}")
+                                if event and hasattr(event, "selection"):
+                                    # Safely read points across different Streamlit version structures
+                                    points = []
+                                    if hasattr(event.selection, "points"):
+                                        points = event.selection.points
+                                    elif isinstance(event.selection, dict):
+                                        points = event.selection.get("points", [])
+                                        
+                                    if points and len(points) > 0:
+                                        selected_theme_to_open = theme
+                            except TypeError:
+                                # Fallback for Streamlit < 1.35
+                                st.plotly_chart(fig_single, use_container_width=True, config={'displayModeBar': False}, key=f"ring_fallback_{theme}")
+                
+                # Clean shared legend accurately matching the visual appearance
+                st.markdown("""
+                <div style="display:flex; justify-content:center; flex-wrap:wrap; gap:20px; color:#475569; font-size:11.5px; margin-top:-10px; margin-bottom:40px;">
+                   <div style="display:flex; align-items:center; gap:6px;"><span style="color:#d97706; font-size:14px;">■</span> Tier 1 (community alone)</div>
+                   <div style="display:flex; align-items:center; gap:6px;"><span style="color:#712416; font-size:14px;">■</span> Tier 2 (Minor Support)</div>
+                   <div style="display:flex; align-items:center; gap:6px;"><span style="color:#0ea5e9; font-size:14px;">■</span> Tier 3 (Convergence)</div>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                # Open corresponding modal dynamically if a ring was clicked
+                if selected_theme_to_open:
+                    show_theme_overlay(selected_theme_to_open, selected_state, selected_district, selected_village)
 
             # -------------------------------------------------------------
             # Visualization 2: Tiers across 3 Pillars (Radial Grid)
