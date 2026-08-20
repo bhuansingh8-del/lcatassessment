@@ -988,58 +988,103 @@ if dashboard_mode == "LCAT & GPDP":
                 
                 selected_theme_to_open = None
                 
-                # Render each existing ring as its own independent interactive element in a 4x2 grid
-                for row_idx in range(0, len(themes_list), 4):
-                    row_themes = themes_list[row_idx:row_idx+4]
-                    cols = st.columns(4)
-                    for col_idx, theme in enumerate(row_themes):
-                        with cols[col_idx]:
-                            theme_data = plot_df_theme[plot_df_theme['Clean_Theme'] == theme]
-                            theme_data = theme_data[theme_data['Count'] > 0]
-                            
-                            colors = [tier_colors.get(t, "#cbd5e1") for t in theme_data['Tier']]
-                            total = theme_pivot.loc[theme, 'Total']
-                            
-                            fig_single = go.Figure(go.Pie(
-                                labels=theme_data['Tier'],
-                                values=theme_data['Count'],
-                                hole=0.68,
-                                marker=dict(colors=colors, line=dict(color='#ffffff', width=1.5)),
-                                textinfo='none',
-                                hoverinfo='label+percent+value',
-                                sort=False
-                            ))
-                            
-                            wrapped_text = "<br>".join(textwrap.wrap(theme, width=22))
-                            
-                            fig_single.update_layout(
-                                clickmode="event+select",
-                                showlegend=False,
-                                plot_bgcolor="rgba(0,0,0,0)",
-                                paper_bgcolor="rgba(0,0,0,0)",
-                                margin=dict(l=0, r=0, t=10, b=60),
-                                height=220,
-                                annotations=[
-                                    dict(text=f"<b>{int(total)}</b>", x=0.5, y=0.5, font_size=15, font_color='#1e293b', showarrow=False, xanchor="center", yanchor="middle"),
-                                    dict(text=wrapped_text, x=0.5, y=-0.25, font_size=11, font_color="#475569", showarrow=False, align="center", xanchor="center", yanchor="top")
-                                ]
-                            )
-                            
-                            try:
-                                event = st.plotly_chart(fig_single, use_container_width=True, config={'displayModeBar': False}, on_select="rerun", key=f"ring_{theme}")
-                                if event and hasattr(event, "selection"):
-                                    # Safely read points across different Streamlit version structures
-                                    points = []
-                                    if hasattr(event.selection, "points"):
-                                        points = event.selection.points
-                                    elif isinstance(event.selection, dict):
-                                        points = event.selection.get("points", [])
-                                        
-                                    if points and len(points) > 0:
-                                        selected_theme_to_open = theme
-                            except TypeError:
-                                # Fallback for Streamlit < 1.35
-                                st.plotly_chart(fig_single, use_container_width=True, config={'displayModeBar': False}, key=f"ring_fallback_{theme}")
+                wrapped_themes = ["<br>".join(textwrap.wrap(t, width=18)) for t in themes_list]
+                fig_theme = make_subplots(
+                    rows=2, cols=4,
+                    specs=[[{'type': 'domain'}] * 4] * 2,
+                    subplot_titles=wrapped_themes,
+                    vertical_spacing=0.28,
+                    horizontal_spacing=0.02
+                )
+                
+                for i, theme in enumerate(themes_list):
+                    r = (i // 4) + 1
+                    c = (i % 4) + 1
+                    theme_data = plot_df_theme[plot_df_theme['Clean_Theme'] == theme]
+                    theme_data = theme_data[theme_data['Count'] > 0]
+                    
+                    colors = [tier_colors.get(t, "#cbd5e1") for t in theme_data['Tier']]
+                    total = theme_pivot.loc[theme, 'Total']
+                    
+                    fig_theme.add_trace(go.Pie(
+                        labels=theme_data['Tier'],
+                        values=theme_data['Count'],
+                        hole=0.68,
+                        title={'text': f"<b>{int(total)}</b>", 'font': {'size': 14, 'color': '#1e293b'}},
+                        marker=dict(colors=colors, line=dict(color='#ffffff', width=1.5)),
+                        textinfo='none',
+                        hoverinfo='label+percent+value',
+                        name=theme,
+                        sort=False
+                    ), row=r, col=c)
+                
+                fig_theme.update_layout(
+                    plot_bgcolor="rgba(0,0,0,0)",
+                    paper_bgcolor="rgba(0,0,0,0)",
+                    font=dict(color="#1e293b", size=11),
+                    margin=dict(l=0, r=0, t=10, b=40),
+                    height=450,
+                    showlegend=False
+                )
+                
+                for annotation in fig_theme['layout']['annotations']:
+                    annotation['yanchor'] = 'top'
+                    annotation['y'] -= 0.45
+                    annotation['font'] = dict(size=11, color="#475569")
+                
+                with st.container():
+                    # Marker to allow CSS to precisely target this interaction layer
+                    st.markdown('<div id="theme-hitbox-marker"></div>', unsafe_allow_html=True)
+                    st.plotly_chart(fig_theme, use_container_width=True, config={'displayModeBar': False})
+                    
+                    st.markdown("""
+                    <style>
+                    div[data-testid="stVerticalBlock"]:has(#theme-hitbox-marker) {
+                        position: relative;
+                    }
+                    /* Pull the invisible hitbox columns exactly over the chart */
+                    div[data-testid="stVerticalBlock"]:has(#theme-hitbox-marker) > div.element-container:nth-last-child(2) {
+                        margin-top: -460px !important;
+                        z-index: 100;
+                        position: relative;
+                    }
+                    div[data-testid="stVerticalBlock"]:has(#theme-hitbox-marker) > div.element-container:nth-last-child(1) {
+                        z-index: 100;
+                        position: relative;
+                    }
+                    /* Style the buttons to be fully transparent structural blocks */
+                    div[data-testid="stVerticalBlock"]:has(#theme-hitbox-marker) button {
+                        width: 100% !important;
+                        height: 180px !important;
+                        margin: 10px 0 0 0 !important;
+                        opacity: 0 !important;
+                        background: transparent !important;
+                        border: none !important;
+                        box-shadow: none !important;
+                        cursor: pointer !important;
+                    }
+                    div[data-testid="stVerticalBlock"]:has(#theme-hitbox-marker) button:hover,
+                    div[data-testid="stVerticalBlock"]:has(#theme-hitbox-marker) button:active,
+                    div[data-testid="stVerticalBlock"]:has(#theme-hitbox-marker) button:focus {
+                        background: transparent !important;
+                        border: none !important;
+                        box-shadow: none !important;
+                        color: transparent !important;
+                    }
+                    </style>
+                    """, unsafe_allow_html=True)
+                    
+                    r1 = st.columns(4)
+                    r2 = st.columns(4)
+                    for i, theme in enumerate(themes_list):
+                        if i < 4:
+                            with r1[i]:
+                                if st.button(" ", key=f"hb_{theme}"):
+                                    selected_theme_to_open = theme
+                        elif i < 8:
+                            with r2[i-4]:
+                                if st.button(" ", key=f"hb_{theme}"):
+                                    selected_theme_to_open = theme
                 
                 # Clean shared legend accurately matching the visual appearance
                 st.markdown("""
