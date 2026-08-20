@@ -850,8 +850,8 @@ if dashboard_mode == "LCAT & GPDP":
                 popup=f"{v['name']} Village ({v['district']})"
             ).add_to(m)
 
-        st_folium(m, width="100%", height=560)
-
+        st_folium(m, use_container_width=True, height=560, returned_objects=[])
+        
     # -----------------------------------------------------------------------------
     # 7. ANALYTICS & LCAT CHARTS (PLOTLY)
     # -----------------------------------------------------------------------------
