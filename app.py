@@ -310,6 +310,42 @@ def load_climate_data() -> pd.DataFrame:
 
 
 # -----------------------------------------------------------------------------
+# 2.2 OVERLAY DATA LOADERS (PRIORITY ACTIONS & VOICES)
+# -----------------------------------------------------------------------------
+@st.cache_data
+def load_priority_actions() -> pd.DataFrame:
+    path = "data/GPDP_Action_Plans_Themed_v2_Pillars.xlsx"
+    if os.path.exists(path):
+        try:
+            return pd.read_excel(path).fillna("N/A")
+        except Exception as e:
+            st.error(f"Error reading priority actions: {e}")
+            return pd.DataFrame()
+    return pd.DataFrame()
+
+@st.cache_data
+def load_community_voices() -> pd.DataFrame:
+    path = "data/lcat/LCAT_Verbatim_Quote_Classification.xlsx"
+    if os.path.exists(path):
+        try:
+            return pd.read_excel(path).fillna("N/A")
+        except Exception as e:
+            st.error(f"Error reading community voices: {e}")
+            return pd.DataFrame()
+    return pd.DataFrame()
+
+
+# Safe dialog decorator initialization for cross-version compatibility
+if hasattr(st, "dialog"):
+    dialog_decorator = st.dialog
+elif hasattr(st, "experimental_dialog"):
+    dialog_decorator = st.experimental_dialog
+else:
+    def dialog_decorator(*args, **kwargs):
+        return lambda f: f
+
+
+# -----------------------------------------------------------------------------
 # 2.5 POPULATION RASTER PROCESSOR
 # -----------------------------------------------------------------------------
 @st.cache_data(show_spinner=False)
@@ -768,7 +804,110 @@ if dashboard_mode == "LCAT & GPDP":
     # -----------------------------------------------------------------------------
     with analytics_col:
         st.markdown("### LCAT Elements & Risk Breakdown")
+        st.markdown("<p style='font-size:0.9rem; color:#64748b; margin-top:-10px; margin-bottom:15px;'>Click a theme ring to view priority actions and community voices</p>", unsafe_allow_html=True)
         
+        # Overlay Dialog Function
+        @dialog_decorator("Theme Insights", width="large")
+        def show_theme_overlay(theme, state, district, village):
+            st.markdown(f"<h2 style='color:#712416; margin-top:0;'>{theme}</h2>", unsafe_allow_html=True)
+            
+            actions_df = load_priority_actions()
+            quotes_df = load_community_voices()
+            
+            # --- PRIORITY ACTIONS ---
+            st.markdown("### Priority Actions")
+            if not actions_df.empty:
+                a_df = actions_df.copy()
+                if state != "Unknown" and 'State' in a_df.columns:
+                    a_df = a_df[a_df['State'].astype(str) == state]
+                if district != "All Districts" and 'District' in a_df.columns:
+                    a_df = a_df[a_df['District'].astype(str) == district]
+                if village != "All Villages" and 'Panchayat/Village' in a_df.columns:
+                    a_df = a_df[a_df['Panchayat/Village'].astype(str) == village]
+                    
+                if 'Theme' in a_df.columns:
+                    a_df['Clean_Theme'] = a_df['Theme'].astype(str).apply(lambda x: x.split(')')[-1].strip() if ')' in x else x)
+                    a_df = a_df[a_df['Clean_Theme'] == theme]
+                    
+                if a_df.empty:
+                    st.info("No priority actions found for this selection.")
+                else:
+                    for idx, row in enumerate(a_df.to_dict('records')):
+                        action = row.get('Priority Action', 'N/A')
+                        tier = row.get('Tier', 'N/A')
+                        pillars = row.get('Pillars', 'N/A')
+                        st.markdown(f"""
+                        <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; padding:16px; margin-bottom:12px;">
+                            <div style="font-weight:600; color:#1e293b; margin-bottom:8px;">{idx+1}. {action}</div>
+                            <div style="font-size:0.8rem; color:#64748b;">
+                                <b>Tier:</b> {tier} &nbsp;|&nbsp; <b>Pillars:</b> {pillars}
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
+            else:
+                st.info("Priority Actions dataset not found.")
+                
+            st.markdown("<hr style='border:1px solid #e2e8f0; margin: 30px 0;'>", unsafe_allow_html=True)
+            
+            # --- COMMUNITY VOICES ---
+            st.markdown("### Community Voices")
+            if not quotes_df.empty:
+                q_df = quotes_df.copy()
+                if state != "Unknown" and 'State' in q_df.columns:
+                    q_df = q_df[q_df['State'].astype(str) == state]
+                    
+                if 'Primary LCAT Element' in q_df.columns:
+                    q_df = q_df[q_df['Primary LCAT Element'].astype(str).str.strip() == theme]
+                    
+                if district != "All Districts" and 'District' in q_df.columns:
+                    q_df = q_df[q_df['District'].astype(str) == district]
+                    
+                fallback_used = False
+                final_q_df = q_df.copy()
+                
+                if village != "All Villages":
+                    v_df = q_df.copy()
+                    if 'Village' in v_df.columns and 'Panchayat (as stated)' in v_df.columns:
+                        mask = (v_df['Village'].astype(str) == village) | (v_df['Panchayat (as stated)'].astype(str) == village)
+                        v_df = v_df[mask]
+                    elif 'Village' in v_df.columns:
+                        v_df = v_df[v_df['Village'].astype(str) == village]
+                    elif 'Panchayat (as stated)' in v_df.columns:
+                        v_df = v_df[v_df['Panchayat (as stated)'].astype(str) == village]
+                        
+                    if not v_df.empty:
+                        final_q_df = v_df
+                    else:
+                        fallback_used = True
+                        final_q_df = q_df
+                        
+                if final_q_df.empty:
+                    st.info("No verbatim quotes available for this theme at the selected geography.")
+                else:
+                    if fallback_used:
+                        st.warning(f"No verbatim quotes available specifically for **{village}**. Showing District-level evidence for **{district}**.")
+                        
+                    for _, row in final_q_df.iterrows():
+                        quote = row.get('Verbatim Quote', 'N/A')
+                        speaker = row.get('Speaker / Attribution', 'Unknown')
+                        v = row.get('Village', 'N/A')
+                        p = row.get('Panchayat (as stated)', 'N/A')
+                        b = row.get('Block / Tehsil (as stated)', 'N/A')
+                        d = row.get('District', 'N/A')
+                        
+                        st.markdown(f"""
+                        <div style="border-left: 4px solid #712416; background:#ffffff; border-radius: 0 6px 6px 0; padding: 16px; margin-bottom: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+                            <div style="font-size:1.05rem; font-style:italic; color:#1e293b; margin-bottom:12px;">"{quote}"</div>
+                            <div style="font-size:0.8rem; color:#64748b; border-top: 1px solid #f1f5f9; padding-top: 10px;">
+                                <span style="font-weight:600; color:#475569;">{speaker}</span> &nbsp;|&nbsp; 
+                                <b>Theme:</b> {theme} <br>
+                                <b>Village:</b> {v} &nbsp;|&nbsp; <b>Panchayat:</b> {p} &nbsp;|&nbsp; <b>Block:</b> {b} &nbsp;|&nbsp; <b>District:</b> {d}
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
+            else:
+                st.info("Community Voices dataset not found.")
+
         # Localized function to fetch raw demand rows strictly for these charts, 
         # ensuring existing village-level dataframe & map logic is completely untouched.
         @st.cache_data
@@ -899,7 +1038,19 @@ if dashboard_mode == "LCAT & GPDP":
                     annotation['text'] = "<br>".join(textwrap.wrap(annotation['text'], width=22))
                     annotation['font'] = dict(size=11, color="#475569")
                     
-                st.plotly_chart(fig_theme, use_container_width=True, config={'displayModeBar': False})
+                # Streamlit >= 1.35 supports on_select for chart clicking
+                try:
+                    theme_event = st.plotly_chart(fig_theme, use_container_width=True, config={'displayModeBar': False}, on_select="rerun")
+                    if theme_event and theme_event.get("selection", {}).get("points"):
+                        pts = theme_event["selection"]["points"]
+                        if len(pts) > 0:
+                            curve_num = pts[0].get("curveNumber", -1)
+                            if 0 <= curve_num < len(themes_list):
+                                selected_theme = themes_list[curve_num]
+                                show_theme_overlay(selected_theme, selected_state, selected_district, selected_village)
+                except TypeError:
+                    # Fallback for Streamlit < 1.35
+                    st.plotly_chart(fig_theme, use_container_width=True, config={'displayModeBar': False})
 
             # -------------------------------------------------------------
             # Visualization 2: Tiers across 3 Pillars (Radial Grid)
