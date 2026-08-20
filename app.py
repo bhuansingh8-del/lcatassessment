@@ -1008,6 +1008,7 @@ if dashboard_mode == "LCAT & GPDP":
                     fig_theme.add_trace(go.Pie(
                         labels=theme_data['Tier'],
                         values=theme_data['Count'],
+                        customdata=[theme] * len(theme_data),
                         hole=0.68,
                         title={'text': f"<b>{int(total)}</b>", 'font': {'size': 15, 'color': '#1e293b'}},
                         marker=dict(colors=colors, line=dict(color='#ffffff', width=1.5)),
@@ -1018,6 +1019,7 @@ if dashboard_mode == "LCAT & GPDP":
                     ), row=r, col=c)
                     
                 fig_theme.update_layout(
+                    clickmode="event+select",
                     title_text="Tiers across Themes",
                     title_font=dict(size=14, color="#1e293b", family="sans-serif"),
                     plot_bgcolor="rgba(0,0,0,0)",
@@ -1041,16 +1043,33 @@ if dashboard_mode == "LCAT & GPDP":
                 # Streamlit >= 1.35 supports on_select for chart clicking
                 try:
                     theme_event = st.plotly_chart(fig_theme, use_container_width=True, config={'displayModeBar': False}, on_select="rerun")
-                    if theme_event and theme_event.get("selection", {}).get("points"):
-                        pts = theme_event["selection"]["points"]
-                        if len(pts) > 0:
-                            curve_num = pts[0].get("curveNumber", -1)
-                            if 0 <= curve_num < len(themes_list):
-                                selected_theme = themes_list[curve_num]
+                    if theme_event and hasattr(theme_event, "selection"):
+                        pts = theme_event.selection.points
+                        if pts and len(pts) > 0:
+                            pt = pts[0]
+                            selected_theme = None
+                            
+                            # Safely extract robust identifier from either dict or attribute structures
+                            if isinstance(pt, dict):
+                                val = pt.get("customdata")
+                                if val is not None:
+                                    selected_theme = val[0] if isinstance(val, list) else val
+                                if not selected_theme:
+                                    selected_theme = pt.get("trace_name")
+                            else:
+                                if hasattr(pt, "customdata") and pt.customdata is not None:
+                                    selected_theme = pt.customdata[0] if isinstance(pt.customdata, list) else pt.customdata
+                                if not selected_theme and hasattr(pt, "trace_name"):
+                                    selected_theme = getattr(pt, "trace_name")
+                                    
+                            if selected_theme:
                                 show_theme_overlay(selected_theme, selected_state, selected_district, selected_village)
                 except TypeError:
                     # Fallback for Streamlit < 1.35
                     st.plotly_chart(fig_theme, use_container_width=True, config={'displayModeBar': False})
+                except Exception:
+                    # Fail gracefully for unexpected environment states
+                    pass
 
             # -------------------------------------------------------------
             # Visualization 2: Tiers across 3 Pillars (Radial Grid)
