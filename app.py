@@ -1055,13 +1055,21 @@ if not traj_df.empty and "District" in traj_df.columns:
             ygap=3
         ))
         
+        import textwrap
+        wrapped_themes = ["<br>".join(textwrap.wrap(t, width=16)) for t in valid_themes]
+        
         fig_matrix.update_layout(
             plot_bgcolor="rgba(0,0,0,0)",
             paper_bgcolor="rgba(0,0,0,0)",
             font=dict(color="#1e293b", size=11),
-            margin=dict(l=10, r=10, t=10, b=10),
-            height=max(200, len(matrix_df) * 35 + 100),
-            xaxis=dict(tickangle=45, tickfont=dict(color="#475569")),
+            margin=dict(l=10, r=10, t=10, b=60),
+            height=max(200, len(matrix_df) * 35 + 120),
+            xaxis=dict(
+                tickangle=0, 
+                tickvals=valid_themes,
+                ticktext=wrapped_themes,
+                tickfont=dict(color="#475569")
+            ),
             yaxis=dict(tickfont=dict(color="#1e293b", weight="bold"))
         )
         
