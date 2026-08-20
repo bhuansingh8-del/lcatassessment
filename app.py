@@ -842,10 +842,14 @@ with analytics_col:
                 legend=dict(orientation="h", yanchor="top", y=-0.15, xanchor="center", x=0.5, font=dict(color="#475569"), title="")
             )
             
+            import textwrap
             # Shift generated subplot titles to sit directly underneath each ring
             for annotation in fig_theme['layout']['annotations']:
                 annotation['yanchor'] = 'top'
                 annotation['y'] -= 0.48
+                annotation['align'] = 'center'
+                # Wrap long titles to a maximum of 22 characters to force 2 neat lines
+                annotation['text'] = "<br>".join(textwrap.wrap(annotation['text'], width=22))
                 annotation['font'] = dict(size=11, color="#475569")
                 
             st.plotly_chart(fig_theme, use_container_width=True, config={'displayModeBar': False})
