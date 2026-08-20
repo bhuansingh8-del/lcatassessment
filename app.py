@@ -448,33 +448,33 @@ def show_theme_overlay(theme: str, state: str, district: str, village: str):
                 df_gpdp = pd.DataFrame()
                 
             if not df_gpdp.empty:
-             total_actions = len(df_gpdp)
-             st.markdown(f"<div style='font-size: 0.95rem; color: #475569; margin-bottom: 20px;'><b>{total_actions}</b> actions</div>", unsafe_allow_html=True)
-            
-             tier_groups = {
-                "Tier 1 — Community Led": {"color": "#d97706", "actions": []},
-                "Tier 2 — Minor Support": {"color": "#712416", "actions": []},
-                "Tier 3 — External Support & Convergence": {"color": "#0ea5e9", "actions": []},
-                "Other / Uncategorized": {"color": "#64748b", "actions": []}
-            }
-            
-            for i, row in df_gpdp.iterrows():
-                action_text = row.get("Priority Action", "N/A")
-                tier_info = str(row.get("Tier", ""))
-                pillar_info = row.get("Pillars", "")
+                total_actions = len(df_gpdp)
+                st.markdown(f"<div style='font-size: 0.95rem; color: #475569; margin-bottom: 20px;'><b>{total_actions}</b> actions</div>", unsafe_allow_html=True)
                 
-                action_data = {"text": action_text, "pillars": pillar_info}
+                tier_groups = {
+                    "Tier 1 — Community Led": {"color": "#d97706", "actions": []},
+                    "Tier 2 — Minor Support": {"color": "#712416", "actions": []},
+                    "Tier 3 — External Support & Convergence": {"color": "#0ea5e9", "actions": []},
+                    "Other / Uncategorized": {"color": "#64748b", "actions": []}
+                }
                 
-                if 'Tier 1' in tier_info:
-                    tier_groups["Tier 1 — Community Led"]["actions"].append(action_data)
-                elif 'Tier 2' in tier_info:
-                    tier_groups["Tier 2 — Minor Support"]["actions"].append(action_data)
-                elif 'Tier 3' in tier_info:
-                    tier_groups["Tier 3 — External Support & Convergence"]["actions"].append(action_data)
-                else:
-                    tier_groups["Other / Uncategorized"]["actions"].append(action_data)
-            
-            for group_name, group_data in tier_groups.items():
+                for i, row in df_gpdp.iterrows():
+                    action_text = row.get("Priority Action", "N/A")
+                    tier_info = str(row.get("Tier", ""))
+                    pillar_info = row.get("Pillars", "")
+                    
+                    action_data = {"text": action_text, "pillars": pillar_info}
+                    
+                    if 'Tier 1' in tier_info:
+                        tier_groups["Tier 1 — Community Led"]["actions"].append(action_data)
+                    elif 'Tier 2' in tier_info:
+                        tier_groups["Tier 2 — Minor Support"]["actions"].append(action_data)
+                    elif 'Tier 3' in tier_info:
+                        tier_groups["Tier 3 — External Support & Convergence"]["actions"].append(action_data)
+                    else:
+                        tier_groups["Other / Uncategorized"]["actions"].append(action_data)
+                
+                for group_name, group_data in tier_groups.items():
                     actions = group_data["actions"]
                     color = group_data["color"]
                     
@@ -978,40 +978,40 @@ if dashboard_mode == "LCAT & GPDP":
             fig_theme.update_layout(
                 title_text="Tiers across Themes",
                 title_font=dict(size=14, color="#1e293b", family="sans-serif"),
-                    plot_bgcolor="rgba(0,0,0,0)",
-                    paper_bgcolor="rgba(0,0,0,0)",
-                    font=dict(color="#1e293b", size=11),
-                    margin=dict(l=10, r=10, t=50, b=90),
-                    height=450,
-                    showlegend=True,
-                    legend=dict(orientation="h", yanchor="top", y=-0.15, xanchor="center", x=0.5, font=dict(color="#475569"), title="")
-                )
-                
+                plot_bgcolor="rgba(0,0,0,0)",
+                paper_bgcolor="rgba(0,0,0,0)",
+                font=dict(color="#1e293b", size=11),
+                margin=dict(l=10, r=10, t=50, b=90),
+                height=450,
+                showlegend=True,
+                legend=dict(orientation="h", yanchor="top", y=-0.15, xanchor="center", x=0.5, font=dict(color="#475569"), title="")
+            )
+            
             for annotation in fig_theme['layout']['annotations']:
-                    annotation['yanchor'] = 'top'
-                    annotation['y'] -= 0.48
-                    annotation['align'] = 'center'
-                    annotation['text'] = "<br>".join(textwrap.wrap(annotation['text'], width=22))
-                    annotation['font'] = dict(size=11, color="#475569")
-                    
+                annotation['yanchor'] = 'top'
+                annotation['y'] -= 0.48
+                annotation['align'] = 'center'
+                annotation['text'] = "<br>".join(textwrap.wrap(annotation['text'], width=22))
+                annotation['font'] = dict(size=11, color="#475569")
+                
             if HAS_PLOTLY_EVENTS:
-                        clicked = plotly_events(
-                        fig_theme,
-                        click_event=True,
-                        hover_event=False,
-                        select_event=False,
-                        key="theme_chart_events",
-                        override_height=450,
-                        override_width="100%"
-                    )
-                    if clicked and len(clicked) > 0:
-                        curve_idx = clicked[0].get("curveNumber", -1)
-                        if 0 <= curve_idx < len(themes_list):
-                            selected_theme = themes_list[curve_idx]
-                            show_theme_overlay(selected_theme, selected_state, selected_district, selected_village)
-                else:
-                    st.warning("Please install `streamlit-plotly-events` to enable clickable rings.")
-                    st.plotly_chart(fig_theme, use_container_width=True, config={'displayModeBar': False})
+                clicked = plotly_events(
+                    fig_theme,
+                    click_event=True,
+                    hover_event=False,
+                    select_event=False,
+                    key="theme_chart_events",
+                    override_height=450,
+                    override_width="100%"
+                )
+                if clicked and len(clicked) > 0:
+                    curve_idx = clicked[0].get("curveNumber", -1)
+                    if 0 <= curve_idx < len(themes_list):
+                        selected_theme = themes_list[curve_idx]
+                        show_theme_overlay(selected_theme, selected_state, selected_district, selected_village)
+            else:
+                st.warning("Please install `streamlit-plotly-events` to enable clickable rings.")
+                st.plotly_chart(fig_theme, use_container_width=True, config={'displayModeBar': False})
 
             # -------------------------------------------------------------
             # Visualization 2: Tiers across 3 Pillars (Radial Grid)
@@ -1070,23 +1070,23 @@ if dashboard_mode == "LCAT & GPDP":
                 fig_pillar.update_layout(
                     title_text="Tiers across Pillars",
                     title_font=dict(size=14, color="#1e293b", family="sans-serif"),
-                        plot_bgcolor="rgba(0,0,0,0)",
-                        paper_bgcolor="rgba(0,0,0,0)",
-                        font=dict(color="#1e293b", size=11),
-                        margin=dict(l=10, r=10, t=50, b=90),
-                        height=280,
-                        showlegend=True,
-                        legend=dict(orientation="h", yanchor="top", y=-0.3, xanchor="center", x=0.5, font=dict(color="#475569"), title="")
-                    )
+                    plot_bgcolor="rgba(0,0,0,0)",
+                    paper_bgcolor="rgba(0,0,0,0)",
+                    font=dict(color="#1e293b", size=11),
+                    margin=dict(l=10, r=10, t=50, b=90),
+                    height=280,
+                    showlegend=True,
+                    legend=dict(orientation="h", yanchor="top", y=-0.3, xanchor="center", x=0.5, font=dict(color="#475569"), title="")
+                )
+                
+                for annotation in fig_pillar['layout']['annotations']:
+                    annotation['yanchor'] = 'top'
+                    annotation['y'] -= 1.05
+                    annotation['font'] = dict(size=12, color="#475569")
                     
-                    for annotation in fig_pillar['layout']['annotations']:
-                        annotation['yanchor'] = 'top'
-                        annotation['y'] -= 1.05
-                        annotation['font'] = dict(size=12, color="#475569")
-                        
-                    st.plotly_chart(fig_pillar, use_container_width=True, config={'displayModeBar': False})
-                else:
-                    st.info("No mapped pillar data available for this selection.")
+                st.plotly_chart(fig_pillar, use_container_width=True, config={'displayModeBar': False})
+            else:
+                st.info("No mapped pillar data available for this selection.")
         else:
             st.info("No raw data available for the selected filters to generate tier breakdowns.")
 
