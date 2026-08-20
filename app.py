@@ -77,25 +77,24 @@ st.markdown("""
     
     /* Top Header Bar */
     .header-banner {
-        background: #ffffff;
-        border: 1px solid #e2e8f0;
+        background: linear-gradient(90deg, #712416 0%, #9b2c1d 100%);
         padding: 16px 24px;
         border-radius: 8px;
         margin-bottom: 24px;
         display: flex;
         justify-content: space-between;
         align-items: center;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+        box-shadow: 0 4px 12px rgba(113, 36, 22, 0.15);
     }
     
     .header-title {
-        color: #1e293b;
+        color: #ffffff;
         font-size: 1.25rem;
         font-weight: 700;
         margin: 0;
     }
     .header-subtitle {
-        color: #64748b;
+        color: #f8fafc;
         font-size: 0.85rem;
         opacity: 0.95;
         margin: 4px 0 0 0;
@@ -113,7 +112,7 @@ st.markdown("""
     }
     
     .metric-label {
-        font-size: 0.9rem; 
+        font-size: 0.75rem; 
         color: #64748b; 
         font-weight: 700;
         letter-spacing: 0.5px;
@@ -448,60 +447,23 @@ def show_theme_overlay(theme: str, state: str, district: str, village: str):
                 df_gpdp = pd.DataFrame()
                 
             if not df_gpdp.empty:
-            total_actions = len(df_gpdp)
-            st.markdown(f"<div style='font-size: 0.95rem; color: #475569; margin-bottom: 20px;'><b>{total_actions}</b> actions</div>", unsafe_allow_html=True)
-            
-            tier_groups = {
-                "Tier 1 — Community Led": {"color": "#d97706", "actions": []},
-                "Tier 2 — Minor Support": {"color": "#712416", "actions": []},
-                "Tier 3 — External Support & Convergence": {"color": "#0ea5e9", "actions": []},
-                "Other / Uncategorized": {"color": "#64748b", "actions": []}
-            }
-            
-            for i, row in df_gpdp.iterrows():
-                action_text = row.get("Priority Action", "N/A")
-                tier_info = str(row.get("Tier", ""))
-                pillar_info = row.get("Pillars", "")
-                
-                action_data = {"text": action_text, "pillars": pillar_info}
-                
-                if 'Tier 1' in tier_info:
-                    tier_groups["Tier 1 — Community Led"]["actions"].append(action_data)
-                elif 'Tier 2' in tier_info:
-                    tier_groups["Tier 2 — Minor Support"]["actions"].append(action_data)
-                elif 'Tier 3' in tier_info:
-                    tier_groups["Tier 3 — External Support & Convergence"]["actions"].append(action_data)
-                else:
-                    tier_groups["Other / Uncategorized"]["actions"].append(action_data)
-            
-            for group_name, group_data in tier_groups.items():
-                    actions = group_data["actions"]
-                    color = group_data["color"]
+                for i, row in df_gpdp.iterrows():
+                    action_text = row.get("Priority Action", "N/A")
+                    tier_info = row.get("Tier", "")
+                    pillar_info = row.get("Pillars", "")
                     
-                    if actions:
-                        st.markdown(f"""
-                        <div style="margin-top: 16px; margin-bottom: 12px;">
-                            <div style="font-size: 1rem; font-weight: 700; color: {color};">{group_name}</div>
-                            <div style="font-size: 0.8rem; color: #64748b;">{len(actions)} actions</div>
+                    tier_html = f'<span style="background: #f1f5f9; padding: 2px 6px; border-radius: 4px; margin-right: 8px;">{tier_info}</span>' if pd.notna(tier_info) and str(tier_info).strip() else ''
+                    pillar_html = f'<span style="background: #f1f5f9; padding: 2px 6px; border-radius: 4px;">{pillar_info}</span>' if pd.notna(pillar_info) and str(pillar_info).strip() else ''
+                    
+                    st.markdown(f"""
+                    <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 12px; margin-bottom: 12px;">
+                        <div style="font-size: 1rem; color: #1e293b; font-weight: 500;">{action_text}</div>
+                        <div style="font-size: 0.8rem; color: #64748b; margin-top: 8px;">
+                            {tier_html}
+                            {pillar_html}
                         </div>
-                        """, unsafe_allow_html=True)
-                        
-                        for idx, act in enumerate(actions, 1):
-                            num_str = f"{idx:02d}"
-                            pillar_info = act["pillars"]
-                            pillar_html = f'<span style="background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-size: 0.75rem; color: #475569;">{pillar_info}</span>' if pd.notna(pillar_info) and str(pillar_info).strip() else ''
-                            
-                            st.markdown(f"""
-                            <div style="background: #ffffff; border: 1px solid #e2e8f0; border-left: 4px solid {color}; border-radius: 6px; padding: 12px; margin-bottom: 12px; display: flex; gap: 12px;">
-                                <div style="color: {color}; font-weight: 700; font-size: 0.95rem; opacity: 0.85;">{num_str}</div>
-                                <div>
-                                    <div style="font-size: 0.95rem; color: #1e293b; font-weight: 500; margin-bottom: 6px; line-height: 1.4;">{act['text']}</div>
-                                    <div style="margin-top: 6px;">
-                                        {pillar_html}
-                                    </div>
-                                </div>
-                            </div>
-                            """, unsafe_allow_html=True)
+                    </div>
+                    """, unsafe_allow_html=True)
             else:
                 st.info("No specific priority actions found for this selection.")
         else:
@@ -543,12 +505,20 @@ def show_theme_overlay(theme: str, state: str, district: str, village: str):
                         continue
                         
                     speaker = row.get("Speaker / Attribution", "Community Member")
+                    v_name = row.get("Village", "")
+                    p_name = row.get("Panchayat (as stated)", "")
+                    b_name = row.get("Block / Tehsil (as stated)", "")
+                    d_name = row.get("District", "")
+                    
+                    loc_parts = [x for x in [v_name, p_name, b_name, d_name] if pd.notna(x) and str(x).strip()]
+                    loc_str = " • ".join(loc_parts)
                     
                     st.markdown(f"""
                     <div style="background: #f8fafc; border-left: 4px solid #712416; padding: 16px; margin-bottom: 16px; border-radius: 0 6px 6px 0;">
                         <div style="font-size: 1.05rem; color: #0f172a; font-style: italic; margin-bottom: 12px;">"{quote}"</div>
                         <div style="font-size: 0.8rem; color: #475569;">
-                            <span style="font-weight: 600; color: #1e293b;">{speaker}</span>
+                            <span style="font-weight: 600; color: #1e293b;">{speaker}</span><br>
+                            {loc_str}
                         </div>
                     </div>
                     """, unsafe_allow_html=True)
@@ -705,7 +675,7 @@ if dashboard_mode == "LCAT & GPDP":
     with cols[2]:
         st.markdown(f"""
         <div class="metric-card">
-            <div class="metric-label">TIER 1 — COMMUNITY LED</div>
+            <div class="metric-label">TIER 1 (COMMUNITY ALONE)</div>
             <div class="metric-value">{t1_demands}</div>
             <div class="metric-desc">Immediate Local Delivery</div>
         </div>
@@ -894,9 +864,9 @@ if dashboard_mode == "LCAT & GPDP":
                 
             if 'Tier' in raw_df.columns:
                 raw_df['Clean_Tier'] = raw_df['Tier'].astype(str).apply(
-                    lambda x: 'Tier 1 — Community Led' if 'Tier 1' in x else (
-                        'Tier 2 — Minor Support' if 'Tier 2' in x else (
-                        'Tier 3 — External Support & Convergence' if 'Tier 3' in x else 'Unknown'
+                    lambda x: 'Tier 1 (community alone)' if 'Tier 1' in x else (
+                        'Tier 2 (Minor Support)' if 'Tier 2' in x else (
+                        'Tier 3 (Convergence)' if 'Tier 3' in x else 'Unknown'
                     ))
                 )
             else:
@@ -909,42 +879,39 @@ if dashboard_mode == "LCAT & GPDP":
                 raw_df['Clean_Pillar'] = 'Unknown'
                 
             tier_colors = {
-                "Tier 1 — Community Led": "#d97706",
-                "Tier 2 — Minor Support": "#712416",
-                "Tier 3 — External Support & Convergence": "#0ea5e9"
+                "Tier 1 (community alone)": "#d97706",
+                "Tier 2 (Minor Support)": "#712416",
+                "Tier 3 (Convergence)": "#0ea5e9"
             }
+            tier_order = ["Tier 1 (community alone)", "Tier 2 (Minor Support)", "Tier 3 (Convergence)"]
 
             # -------------------------------------------------------------
             # Visualization 1: Tiers across Themes (Radial Grid)
             # -------------------------------------------------------------
             theme_tier_df = raw_df[raw_df['Clean_Tier'] != 'Unknown'].groupby(['Clean_Theme', 'Clean_Tier']).size().reset_index(name='Count')
-            
             if not theme_tier_df.empty:
                 theme_pivot = theme_tier_df.pivot(index='Clean_Theme', columns='Clean_Tier', values='Count').fillna(0)
                 theme_pivot['Total'] = theme_pivot.sum(axis=1)
+                theme_pivot = theme_pivot.sort_values('Total', ascending=False)
+                
                 plot_df_theme = theme_pivot.drop(columns=['Total']).reset_index().melt(id_vars='Clean_Theme', var_name='Tier', value_name='Count')
-            else:
-                theme_pivot = pd.DataFrame(columns=['Total'])
-                plot_df_theme = pd.DataFrame(columns=['Clean_Theme', 'Tier', 'Count'])
                 
-            themes_list = LCAT_ELEMENTS
-            n_themes = len(themes_list)
-            
-            cols = 4
-            rows = 2
-            
-            fig_theme = make_subplots(
-                rows=rows, cols=cols,
-                specs=[[{'type': 'domain'}] * cols] * rows,
-                subplot_titles=themes_list,
-                vertical_spacing=0.15
-            )
-            
-            for i, theme in enumerate(themes_list):
-                r = i // cols + 1
-                c = i % cols + 1
+                themes_list = theme_pivot.index.tolist()
+                n_themes = len(themes_list)
                 
-                if theme in theme_pivot.index:
+                cols = 4
+                rows = max(1, (n_themes + cols - 1) // cols)
+                
+                fig_theme = make_subplots(
+                    rows=rows, cols=cols,
+                    specs=[[{'type': 'domain'}] * cols] * rows,
+                    subplot_titles=themes_list,
+                    vertical_spacing=0.15
+                )
+                
+                for i, theme in enumerate(themes_list):
+                    r = i // cols + 1
+                    c = i % cols + 1
                     theme_data = plot_df_theme[plot_df_theme['Clean_Theme'] == theme]
                     theme_data = theme_data[theme_data['Count'] > 0] 
                     
@@ -962,22 +929,10 @@ if dashboard_mode == "LCAT & GPDP":
                         name=theme,
                         sort=False
                     ), row=r, col=c)
-                else:
-                    fig_theme.add_trace(go.Pie(
-                        labels=['No Data'],
-                        values=[1],
-                        hole=0.68,
-                        title={'text': "<b>0</b>", 'font': {'size': 15, 'color': '#94a3b8'}},
-                        marker=dict(colors=['#f1f5f9'], line=dict(color='#ffffff', width=1.5)),
-                        textinfo='none',
-                        hoverinfo='none',
-                        name=theme,
-                        sort=False
-                    ), row=r, col=c)
                     
-            fig_theme.update_layout(
-                title_text="Tiers across Themes",
-                title_font=dict(size=14, color="#1e293b", family="sans-serif"),
+                fig_theme.update_layout(
+                    title_text="Tiers across Themes",
+                    title_font=dict(size=14, color="#1e293b", family="sans-serif"),
                     plot_bgcolor="rgba(0,0,0,0)",
                     paper_bgcolor="rgba(0,0,0,0)",
                     font=dict(color="#1e293b", size=11),
@@ -1022,22 +977,20 @@ if dashboard_mode == "LCAT & GPDP":
                 if not pillar_tier_df.empty:
                     pillar_pivot = pillar_tier_df.pivot(index='Clean_Pillar', columns='Clean_Tier', values='Count').fillna(0)
                     pillar_pivot['Total'] = pillar_pivot.sum(axis=1)
-                    plot_df_pillar = pillar_pivot.drop(columns=['Total']).reset_index().melt(id_vars='Clean_Pillar', var_name='Tier', value_name='Count')
-                else:
-                    pillar_pivot = pd.DataFrame(columns=['Total'])
-                    plot_df_pillar = pd.DataFrame(columns=['Clean_Pillar', 'Tier', 'Count'])
+                    pillar_pivot = pillar_pivot.sort_values('Total', ascending=False)
                     
-                pillars_list = ["Adaptation", "Mitigation", "Restoration"]
-                n_pillars = 3
-                
-                fig_pillar = make_subplots(
-                    rows=1, cols=3,
-                    specs=[[{'type': 'domain'}] * 3],
-                    subplot_titles=pillars_list
-                )
-                
-                for i, pillar in enumerate(pillars_list):
-                    if pillar in pillar_pivot.index:
+                    plot_df_pillar = pillar_pivot.drop(columns=['Total']).reset_index().melt(id_vars='Clean_Pillar', var_name='Tier', value_name='Count')
+                    
+                    pillars_list = pillar_pivot.index.tolist()
+                    n_pillars = len(pillars_list)
+                    
+                    fig_pillar = make_subplots(
+                        rows=1, cols=max(1, n_pillars),
+                        specs=[[{'type': 'domain'}] * max(1, n_pillars)],
+                        subplot_titles=pillars_list
+                    )
+                    
+                    for i, pillar in enumerate(pillars_list):
                         pillar_data = plot_df_pillar[plot_df_pillar['Clean_Pillar'] == pillar]
                         pillar_data = pillar_data[pillar_data['Count'] > 0]
                         colors = [tier_colors.get(t, "#cbd5e1") for t in pillar_data['Tier']]
@@ -1054,22 +1007,10 @@ if dashboard_mode == "LCAT & GPDP":
                             name=pillar,
                             sort=False
                         ), row=1, col=i+1)
-                    else:
-                        fig_pillar.add_trace(go.Pie(
-                            labels=['No Data'],
-                            values=[1],
-                            hole=0.68,
-                            title={'text': "<b>0</b>", 'font': {'size': 18, 'color': '#94a3b8'}},
-                            marker=dict(colors=['#f1f5f9'], line=dict(color='#ffffff', width=2)),
-                            textinfo='none',
-                            hoverinfo='none',
-                            name=pillar,
-                            sort=False
-                        ), row=1, col=i+1)
                         
-                fig_pillar.update_layout(
-                    title_text="Tiers across Pillars",
-                    title_font=dict(size=14, color="#1e293b", family="sans-serif"),
+                    fig_pillar.update_layout(
+                        title_text="Tiers across Pillars",
+                        title_font=dict(size=14, color="#1e293b", family="sans-serif"),
                         plot_bgcolor="rgba(0,0,0,0)",
                         paper_bgcolor="rgba(0,0,0,0)",
                         font=dict(color="#1e293b", size=11),
