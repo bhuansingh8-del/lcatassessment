@@ -987,14 +987,14 @@ if dashboard_mode == "LCAT & GPDP":
                     legend=dict(orientation="h", yanchor="top", y=-0.15, xanchor="center", x=0.5, font=dict(color="#475569"), title="")
                 )
                 
-             for annotation in fig_theme['layout']['annotations']:
+            for annotation in fig_theme['layout']['annotations']:
                     annotation['yanchor'] = 'top'
                     annotation['y'] -= 0.48
                     annotation['align'] = 'center'
                     annotation['text'] = "<br>".join(textwrap.wrap(annotation['text'], width=22))
                     annotation['font'] = dict(size=11, color="#475569")
                     
-             if HAS_PLOTLY_EVENTS:
+            if HAS_PLOTLY_EVENTS:
                         clicked = plotly_events(
                         fig_theme,
                         click_event=True,
