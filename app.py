@@ -447,60 +447,23 @@ def show_theme_overlay(theme: str, state: str, district: str, village: str):
                 df_gpdp = pd.DataFrame()
                 
             if not df_gpdp.empty:
-                total_actions = len(df_gpdp)
-                st.markdown(f"<div style='font-size: 0.95rem; color: #475569; margin-bottom: 20px;'><b>{total_actions}</b> actions</div>", unsafe_allow_html=True)
-                
-                tier_groups = {
-                    "Tier 1 · Community Alone": {"color": "#d97706", "actions": []},
-                    "Tier 2 · Minor Support": {"color": "#712416", "actions": []},
-                    "Tier 3 · Convergence": {"color": "#0ea5e9", "actions": []},
-                    "Other / Uncategorized": {"color": "#64748b", "actions": []}
-                }
-                
                 for i, row in df_gpdp.iterrows():
                     action_text = row.get("Priority Action", "N/A")
-                    tier_info = str(row.get("Tier", ""))
+                    tier_info = row.get("Tier", "")
                     pillar_info = row.get("Pillars", "")
                     
-                    action_data = {"text": action_text, "pillars": pillar_info}
+                    tier_html = f'<span style="background: #f1f5f9; padding: 2px 6px; border-radius: 4px; margin-right: 8px;">{tier_info}</span>' if pd.notna(tier_info) and str(tier_info).strip() else ''
+                    pillar_html = f'<span style="background: #f1f5f9; padding: 2px 6px; border-radius: 4px;">{pillar_info}</span>' if pd.notna(pillar_info) and str(pillar_info).strip() else ''
                     
-                    if 'Tier 1' in tier_info:
-                        tier_groups["Tier 1 · Community Alone"]["actions"].append(action_data)
-                    elif 'Tier 2' in tier_info:
-                        tier_groups["Tier 2 · Minor Support"]["actions"].append(action_data)
-                    elif 'Tier 3' in tier_info:
-                        tier_groups["Tier 3 · Convergence"]["actions"].append(action_data)
-                    else:
-                        tier_groups["Other / Uncategorized"]["actions"].append(action_data)
-                
-                for group_name, group_data in tier_groups.items():
-                    actions = group_data["actions"]
-                    color = group_data["color"]
-                    
-                    if actions:
-                        st.markdown(f"""
-                        <div style="margin-top: 16px; margin-bottom: 12px;">
-                            <div style="font-size: 1rem; font-weight: 700; color: {color};">{group_name}</div>
-                            <div style="font-size: 0.8rem; color: #64748b;">{len(actions)} actions</div>
+                    st.markdown(f"""
+                    <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 12px; margin-bottom: 12px;">
+                        <div style="font-size: 1rem; color: #1e293b; font-weight: 500;">{action_text}</div>
+                        <div style="font-size: 0.8rem; color: #64748b; margin-top: 8px;">
+                            {tier_html}
+                            {pillar_html}
                         </div>
-                        """, unsafe_allow_html=True)
-                        
-                        for idx, act in enumerate(actions, 1):
-                            num_str = f"{idx:02d}"
-                            pillar_info = act["pillars"]
-                            pillar_html = f'<span style="background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-size: 0.75rem; color: #475569;">{pillar_info}</span>' if pd.notna(pillar_info) and str(pillar_info).strip() else ''
-                            
-                            st.markdown(f"""
-                            <div style="background: #ffffff; border: 1px solid #e2e8f0; border-left: 4px solid {color}; border-radius: 6px; padding: 12px; margin-bottom: 12px; display: flex; gap: 12px;">
-                                <div style="color: {color}; font-weight: 700; font-size: 0.95rem; opacity: 0.85;">{num_str}</div>
-                                <div>
-                                    <div style="font-size: 0.95rem; color: #1e293b; font-weight: 500; margin-bottom: 6px; line-height: 1.4;">{act['text']}</div>
-                                    <div style="margin-top: 6px;">
-                                        {pillar_html}
-                                    </div>
-                                </div>
-                            </div>
-                            """, unsafe_allow_html=True)
+                    </div>
+                    """, unsafe_allow_html=True)
             else:
                 st.info("No specific priority actions found for this selection.")
         else:
@@ -542,12 +505,20 @@ def show_theme_overlay(theme: str, state: str, district: str, village: str):
                         continue
                         
                     speaker = row.get("Speaker / Attribution", "Community Member")
+                    v_name = row.get("Village", "")
+                    p_name = row.get("Panchayat (as stated)", "")
+                    b_name = row.get("Block / Tehsil (as stated)", "")
+                    d_name = row.get("District", "")
+                    
+                    loc_parts = [x for x in [v_name, p_name, b_name, d_name] if pd.notna(x) and str(x).strip()]
+                    loc_str = " • ".join(loc_parts)
                     
                     st.markdown(f"""
                     <div style="background: #f8fafc; border-left: 4px solid #712416; padding: 16px; margin-bottom: 16px; border-radius: 0 6px 6px 0;">
                         <div style="font-size: 1.05rem; color: #0f172a; font-style: italic; margin-bottom: 12px;">"{quote}"</div>
                         <div style="font-size: 0.8rem; color: #475569;">
-                            <span style="font-weight: 600; color: #1e293b;">{speaker}</span>
+                            <span style="font-weight: 600; color: #1e293b;">{speaker}</span><br>
+                            {loc_str}
                         </div>
                     </div>
                     """, unsafe_allow_html=True)
