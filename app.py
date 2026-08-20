@@ -287,7 +287,9 @@ def load_climate_data() -> pd.DataFrame:
     path = "data/climate_vulnerability/climate_vulnerability_results.csv"
     if os.path.exists(path):
         try:
-            return pd.read_csv(path)
+            df = pd.read_csv(path)
+            df.columns = df.columns.str.strip().str.lower()
+            return df
         except Exception as e:
             st.error(f"Error reading climate CSV: {e}")
             return pd.DataFrame()
@@ -295,7 +297,7 @@ def load_climate_data() -> pd.DataFrame:
     # Minimal fallback structure if file is missing completely to prevent crashes
     return pd.DataFrame([
         {
-            "State": "Unknown", "District": "Unknown",
+            "state": "Unknown", "district": "Unknown",
             "canopy_moisture_baseline": 0.0, "canopy_moisture_recent": 0.0,
             "canopy_moisture_change": 0.0, "canopy_moisture_pct_change": "0%",
             "canopy_moisture_status": "Stable",
@@ -524,11 +526,11 @@ with st.sidebar:
         # Separate clean filter logic for Climate Mode
         climate_df = load_climate_data()
         
-        avail_clim_states = climate_df["State"].dropna().unique().tolist() if not climate_df.empty else ["Unknown"]
+        avail_clim_states = climate_df["state"].dropna().unique().tolist() if not climate_df.empty else ["Unknown"]
         selected_clim_state = st.selectbox("State", avail_clim_states, key="clim_state")
         
         if not climate_df.empty:
-            clim_dist_opts = ["All Districts"] + climate_df[climate_df["State"] == selected_clim_state]["District"].dropna().unique().tolist()
+            clim_dist_opts = ["All Districts"] + climate_df[climate_df["state"] == selected_clim_state]["district"].dropna().unique().tolist()
         else:
             clim_dist_opts = ["All Districts"]
             
@@ -1137,7 +1139,7 @@ elif dashboard_mode == "Climate Signals":
     
     # Load and filter climate dataset strictly for current viewport
     df_climate = load_climate_data()
-    df_state = df_climate[df_climate["State"] == selected_clim_state] if not df_climate.empty else df_climate
+    df_state = df_climate[df_climate["state"] == selected_clim_state] if not df_climate.empty else df_climate
     
     # Colors for statuses
     ndmi_colors = {
@@ -1185,7 +1187,7 @@ elif dashboard_mode == "Climate Signals":
             
     # ================= SPECIFIC DISTRICT VIEW =================
     else:
-        dist_row = df_state[df_state["District"] == selected_clim_dist]
+        dist_row = df_state[df_state["district"] == selected_clim_dist]
         
         if not dist_row.empty:
             row = dist_row.iloc[0]
