@@ -1467,7 +1467,4 @@ elif dashboard_mode == "Climate Signals":
         * Baseline: 2001–2010
         * Recent: 2015–2024
         """)
-```
-I am getting the error FileExistsError: [Errno 17] File exists: '.pytest_cache' when executing the application. Please provide a solution for this issue.
-Ensure the problem is resolved completely and effectively.
-Provide only the necessary code changes. Do not include any explanations or extra text.
+
