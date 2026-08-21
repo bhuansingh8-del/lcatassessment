@@ -9,6 +9,7 @@ import os
 import glob
 import json
 import base64
+import re
 from typing import Dict, Any, List, Optional
 from plotly.subplots import make_subplots
 import textwrap
@@ -161,6 +162,19 @@ LCAT_ELEMENTS = [
     "Community and Governance"
 ]
 
+def normalize_theme(x: Any) -> str:
+    """Safely normalizes varied theme strings to the exact LCAT_ELEMENTS list."""
+    if pd.isna(x):
+        return "Unknown"
+    v = str(x).strip()
+    # Strip any leading digits, brackets, or dots (e.g., "1) ", "2. ")
+    v = re.sub(r'^[\d]+\s*[\)\.]?\s*', '', v).strip()
+    v_lower = v.lower()
+    for valid in LCAT_ELEMENTS:
+        if valid.lower() == v_lower or valid.lower() in v_lower:
+            return valid
+    return "Unknown"
+
 ELEMENT_COLORS = {
     "Landform and topography": "#D89A2B",
     "Hydrology": "#0284c7", 
@@ -201,9 +215,11 @@ def load_data_from_folder() -> pd.DataFrame:
                 try:
                     if f.endswith('.csv'):
                         df = pd.read_csv(f)
+                        df_list.append(df)
                     else:
-                        df = pd.read_excel(f)
-                    df_list.append(df)
+                        df_dict = pd.read_excel(f, sheet_name=None)
+                        if df_dict:
+                            df_list.append(pd.concat(df_dict.values(), ignore_index=True))
                 except Exception as e:
                     st.error(f"Error reading {f}: {e}")
             
@@ -211,7 +227,7 @@ def load_data_from_folder() -> pd.DataFrame:
                 raw_df = pd.concat(df_list, ignore_index=True)
                 
                 if 'Theme' in raw_df.columns:
-                    raw_df['Clean_Theme'] = raw_df['Theme'].astype(str).apply(lambda x: x.split(')')[-1].strip() if ')' in x else x)
+                    raw_df['Clean_Theme'] = raw_df['Theme'].apply(normalize_theme)
                 else:
                     raw_df['Clean_Theme'] = 'Unknown'
                     
@@ -432,21 +448,26 @@ def show_theme_overlay(theme: str, state: str, district: str, village: str):
         st.markdown("### Priority Actions")
         gpdp_path = "data/GPDP_Action_Plans_Themed_v2_Pillars.xlsx"
         if os.path.exists(gpdp_path):
-            df_gpdp = pd.read_excel(gpdp_path)
-            
-            if state != "Unknown":
-                df_gpdp = df_gpdp[df_gpdp['State'] == state]
-            if district != "All Districts":
-                df_gpdp = df_gpdp[df_gpdp['District'] == district]
-            if village != "All Villages":
-                df_gpdp = df_gpdp[df_gpdp['Panchayat/Village'] == village]
-                
-            if 'Theme' in df_gpdp.columns:
-                df_gpdp['Clean_Theme'] = df_gpdp['Theme'].astype(str).apply(lambda x: x.split(')')[-1].strip() if ')' in x else x)
-                df_gpdp = df_gpdp[df_gpdp['Clean_Theme'] == theme]
+            df_dict = pd.read_excel(gpdp_path, sheet_name=None)
+            if df_dict:
+                df_gpdp = pd.concat(df_dict.values(), ignore_index=True)
             else:
                 df_gpdp = pd.DataFrame()
-                
+            
+            if not df_gpdp.empty:
+                if state != "Unknown" and 'State' in df_gpdp.columns:
+                    df_gpdp = df_gpdp[df_gpdp['State'] == state]
+                if district != "All Districts" and 'District' in df_gpdp.columns:
+                    df_gpdp = df_gpdp[df_gpdp['District'] == district]
+                if village != "All Villages" and 'Panchayat/Village' in df_gpdp.columns:
+                    df_gpdp = df_gpdp[df_gpdp['Panchayat/Village'] == village]
+                    
+                if 'Theme' in df_gpdp.columns:
+                    df_gpdp['Clean_Theme'] = df_gpdp['Theme'].apply(normalize_theme)
+                    df_gpdp = df_gpdp[df_gpdp['Clean_Theme'] == theme]
+                else:
+                    df_gpdp = pd.DataFrame()
+            
             if not df_gpdp.empty:
                 total_actions = len(df_gpdp)
                 st.markdown(f"<div style='font-size: 0.95rem; color: #475569; margin-bottom: 20px;'><b>{total_actions}</b> actions</div>", unsafe_allow_html=True)
@@ -851,7 +872,7 @@ if dashboard_mode == "LCAT & GPDP":
             ).add_to(m)
 
         st_folium(m, use_container_width=True, height=560, returned_objects=[])
-        
+
     # -----------------------------------------------------------------------------
     # 7. ANALYTICS & LCAT CHARTS (PLOTLY)
     # -----------------------------------------------------------------------------
@@ -870,7 +891,12 @@ if dashboard_mode == "LCAT & GPDP":
                     df_list = []
                     for f in gpdp_files:
                         try:
-                            df_list.append(pd.read_csv(f) if f.endswith('.csv') else pd.read_excel(f))
+                            if f.endswith('.csv'):
+                                df_list.append(pd.read_csv(f))
+                            else:
+                                df_dict = pd.read_excel(f, sheet_name=None)
+                                if df_dict:
+                                    df_list.append(pd.concat(df_dict.values(), ignore_index=True))
                         except Exception:
                             pass
                     if df_list:
@@ -888,7 +914,7 @@ if dashboard_mode == "LCAT & GPDP":
                 raw_df = raw_df[raw_df['Panchayat/Village'] == selected_village]
                 
             if 'Theme' in raw_df.columns:
-                raw_df['Clean_Theme'] = raw_df['Theme'].astype(str).apply(lambda x: x.split(')')[-1].strip() if ')' in x else x)
+                raw_df['Clean_Theme'] = raw_df['Theme'].apply(normalize_theme)
             else:
                 raw_df['Clean_Theme'] = 'Unknown'
                 
@@ -1441,3 +1467,7 @@ elif dashboard_mode == "Climate Signals":
         * Baseline: 2001–2010
         * Recent: 2015–2024
         """)
+```
+I am getting the error FileExistsError: [Errno 17] File exists: '.pytest_cache' when executing the application. Please provide a solution for this issue.
+Ensure the problem is resolved completely and effectively.
+Provide only the necessary code changes. Do not include any explanations or extra text.
