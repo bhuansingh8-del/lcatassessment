@@ -1734,27 +1734,27 @@ if dashboard_mode == "LCAT & GPDP":
    # -----------------------------------------------------------------------------
 # DISTRICT TRAJECTORY
 # -----------------------------------------------------------------------------
-st.markdown(
-    """
-    <div class="analytical-heading" style="margin-top:24px;margin-bottom:6px;">
+    st.markdown(
+      """
+       <div class="analytical-heading" style="margin-top:24px;margin-bottom:6px;">
         <h2>District LCAT Landscape Trajectory</h2>
         <p>Improving, declining, mixed or stable by LCAT theme</p>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
+        </div>
+        """,
+        unsafe_allow_html=True,
+        )
 
-trajectory_df = load_trajectory_data()
+    trajectory_df = load_trajectory_data()
 
-if selected_district == "All Districts":
-    st.info("Select a district to view the trajectory status of all 8 LCAT themes.")
+    if selected_district == "All Districts":
+      st.info("Select a district to view the trajectory status of all 8 LCAT themes.")
 
-elif trajectory_df.empty or "District" not in trajectory_df.columns:
-    st.info("No District Wise LCAT trajectory data is available.")
+    elif trajectory_df.empty or "District" not in trajectory_df.columns:
+        st.info("No District Wise LCAT trajectory data is available.")
 
-else:
-    one = trajectory_df[
-        trajectory_df["District"].astype(str).str.strip() == str(selected_district).strip()
+    else:
+        one = trajectory_df[
+         trajectory_df["District"].astype(str).str.strip() == str(selected_district).strip()
     ]
 
     if one.empty:
