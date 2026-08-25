@@ -937,8 +937,8 @@ def make_map(
     )
 
     tile_dict = {
-        "CartoDB Positron": "CartoDB positron",
         "OpenStreetMap": "OpenStreetMap",
+        "CartoDB Positron": "CartoDB positron",
         "CartoDB Dark": "CartoDB dark_matter",
     }
 
