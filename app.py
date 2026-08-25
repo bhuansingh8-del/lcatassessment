@@ -1037,5 +1037,4 @@ elif dashboard_mode == "Climate Signals":
                 """, unsafe_allow_html=True)
             else:
                 st.warning("Data not found for the selected district.")
-```eof
 
