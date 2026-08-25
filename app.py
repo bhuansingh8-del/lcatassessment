@@ -1731,90 +1731,185 @@ if dashboard_mode == "LCAT & GPDP":
         )
 
    
-    # -------------------------------------------------------------------------
-    # DISTRICT TRAJECTORY
-    # -------------------------------------------------------------------------
-    st.markdown("<div style='height:26px;'></div>", unsafe_allow_html=True)
-    st.markdown(
-        "<div class='analytical-heading' style='margin-top:8px;'>"
-        "<h2>District LCAT Landscape Trajectory</h2>"
-        "<p>Improving, declining, mixed or stable by LCAT theme</p>"
-        "</div>",
-        unsafe_allow_html=True,
-    )
+   # -----------------------------------------------------------------------------
+# DISTRICT TRAJECTORY
+# -----------------------------------------------------------------------------
+st.markdown(
+    """
+    <div class="analytical-heading" style="margin-top:24px;margin-bottom:6px;">
+        <h2>District LCAT Landscape Trajectory</h2>
+        <p>Improving, declining, mixed or stable by LCAT theme</p>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
 
-    trajectory_df = load_trajectory_data()
+trajectory_df = load_trajectory_data()
 
-    if selected_district == "All Districts":
-        st.info("Select a district to view the trajectory status of all 8 LCAT themes.")
-    elif trajectory_df.empty or "District" not in trajectory_df.columns:
-        st.info("No District Wise LCAT trajectory data is available.")
+if selected_district == "All Districts":
+    st.info("Select a district to view the trajectory status of all 8 LCAT themes.")
+
+elif trajectory_df.empty or "District" not in trajectory_df.columns:
+    st.info("No District Wise LCAT trajectory data is available.")
+
+else:
+    one = trajectory_df[
+        trajectory_df["District"].astype(str).str.strip() == str(selected_district).strip()
+    ]
+
+    if one.empty:
+        st.info(f"No trajectory data available for {selected_district}.")
+
     else:
-        one = trajectory_df[trajectory_df["District"] == selected_district]
+        row = one.iloc[0]
 
-        if one.empty:
-            st.info(f"No trajectory data available for {selected_district}.")
-        else:
-            row = one.iloc[0]
+        # Visual status system
+        trajectory_style = {
+            "Declining": {
+                "arrow": "↓",
+                "color": "#8C4536",
+                "bg": "#F2E1DC",
+            },
+            "Improving": {
+                "arrow": "↑",
+                "color": "#3E6B47",
+                "bg": "#E2EBDD",
+            },
+            "Stable": {
+                "arrow": "→",
+                "color": "#3E6B78",
+                "bg": "#E2EBED",
+            },
+            "Mixed": {
+                "arrow": "↕",
+                "color": "#B9863E",
+                "bg": "#F1E7D4",
+            },
+            "Unknown": {
+                "arrow": "—",
+                "color": "#6C7568",
+                "bg": "#E5E2D8",
+            },
+        }
 
-            traj_cols = st.columns(4)
-            for idx, theme in enumerate(LCAT_ELEMENTS):
-                with traj_cols[idx % 4]:
+        # Two compact rows of four themes
+        for start in [0, 4]:
+            theme_cols = st.columns(4)
+
+            for col, theme in zip(theme_cols, LCAT_ELEMENTS[start:start + 4]):
+                with col:
                     status = normalize_text(row.get(theme, "Unknown"))
-                    if status not in STATUS_COLORS:
+
+                    if status not in trajectory_style:
                         status = "Unknown"
 
-                    # Use a compact single-colour ring for a district's status.
-                    fig = go.Figure(
-                        go.Pie(
-                            labels=[status],
-                            values=[1],
-                            hole=0.72,
-                            textinfo="none",
-                            hovertemplate=f"<b>{theme}</b><br>Status: {status}<extra></extra>",
-                            marker=dict(
-                                colors=[STATUS_COLORS[status]],
-                                line=dict(color=COLORS["white"], width=1.5),
-                            ),
-                        )
-                    )
-                    fig.update_layout(
-                        height=130,
-                        margin=dict(l=0, r=0, t=4, b=0),
-                        paper_bgcolor="rgba(0,0,0,0)",
-                        plot_bgcolor="rgba(0,0,0,0)",
-                        showlegend=False,
-                    )
-                    st.plotly_chart(
-                        fig,
-                        width="stretch",
-                        config={"displayModeBar": False},
+                    style = trajectory_style[status]
+
+                    wrapped_theme = "<br>".join(
+                        textwrap.wrap(theme, width=24)
                     )
 
-                    wrapped = "<br>".join(textwrap.wrap(theme, width=22))
-                    status_bg = STATUS_COLORS[status]
-                    fg = COLORS["white"] if status in ["Declining", "Stable", "Improving"] else "#241505"
                     st.markdown(
                         f"""
-                        <div class='theme-label'>{wrapped}</div>
-                        <div style='text-align:center;'>
-                            <span class='trajectory-status' style='background:{status_bg};color:{fg};'>
-                                {html.escape(status)}
-                            </span>
+                        <div style="
+                            background:#F4F1E7;
+                            border:1px solid #C9C2AC;
+                            border-radius:10px;
+                            padding:14px 12px;
+                            min-height:112px;
+                            display:flex;
+                            flex-direction:column;
+                            justify-content:center;
+                            align-items:center;
+                            text-align:center;
+                            margin-bottom:12px;
+                        ">
+                            <div style="
+                                font-family:'IBM Plex Mono',monospace;
+                                font-size:11px;
+                                line-height:1.35;
+                                color:#4C5646;
+                                min-height:30px;
+                            ">
+                                {wrapped_theme}
+                            </div>
+
+                            <div style="
+                                margin-top:10px;
+                                display:flex;
+                                align-items:center;
+                                justify-content:center;
+                                gap:7px;
+                            ">
+                                <span style="
+                                    font-family:'Space Grotesk',sans-serif;
+                                    font-size:25px;
+                                    font-weight:700;
+                                    line-height:1;
+                                    color:{style['color']};
+                                ">
+                                    {style['arrow']}
+                                </span>
+
+                                <span style="
+                                    background:{style['bg']};
+                                    color:{style['color']};
+                                    border-radius:14px;
+                                    padding:4px 10px;
+                                    font-family:'IBM Plex Mono',monospace;
+                                    font-size:10px;
+                                    font-weight:600;
+                                ">
+                                    {html.escape(status)}
+                                </span>
+                            </div>
                         </div>
                         """,
                         unsafe_allow_html=True,
                     )
 
-            legend = " · ".join(
-                f"<span><i class='legend-dot' style='background:{STATUS_COLORS[s]};'></i>{s}</span>"
-                for s in ["Improving", "Stable", "Mixed", "Declining"]
-            )
-            st.markdown(
-                f"<div class='tier-legend' style='justify-content:center;margin-top:15px;'>{legend}</div>",
-                unsafe_allow_html=True,
-            )
+        # Small legend
+        legend_items = [
+            ("↑", "Improving", "#3E6B47"),
+            ("→", "Stable", "#3E6B78"),
+            ("↕", "Mixed", "#B9863E"),
+            ("↓", "Declining", "#8C4536"),
+        ]
 
+        legend_html = "".join(
+            f"""
+            <span style="
+                display:inline-flex;
+                align-items:center;
+                gap:4px;
+                margin-right:14px;
+            ">
+                <span style="
+                    font-size:15px;
+                    font-weight:700;
+                    color:{color};
+                ">{arrow}</span>
+                <span>{label}</span>
+            </span>
+            """
+            for arrow, label, color in legend_items
+        )
+
+        st.markdown(
+            f"""
+            <div style="
+                text-align:center;
+                margin-top:2px;
+                margin-bottom:8px;
+                color:#4C5646;
+                font-family:'IBM Plex Mono',monospace;
+                font-size:10px;
+            ">
+                {legend_html}
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
 # =============================================================================
 # 12. CLIMATE SIGNALS MODE
