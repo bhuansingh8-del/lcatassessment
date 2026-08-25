@@ -1158,7 +1158,7 @@ if "pillar_filter" not in st.session_state:
     st.session_state["pillar_filter"] = "All"
 
 if "basemap_choice" not in st.session_state:
-    st.session_state["basemap_choice"] = "CartoDB Positron"
+    st.session_state["basemap_choice"] = "OpenStreetMap"
 
 
 # =============================================================================
