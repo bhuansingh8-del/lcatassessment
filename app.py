@@ -626,29 +626,55 @@ def normalize_text(value: Any) -> str:
 
 
 def normalize_theme(value: Any) -> str:
+    """Normalize GPDP/LCAT theme labels to one of the eight canonical themes."""
     if pd.isna(value):
         return "Unknown"
 
     v = str(value).strip()
-    # Punctuation mark made optional to handle inputs like "4 Hydrology" or "1 Landform"
-    v = re.sub(r"^\s*\d+\s*[\)\.\-:]?\s*", "", v)
-    v = re.sub(r"\s+", " ", v).strip()
-    
     if not v:
         return "Unknown"
-        
-    key = v.lower().replace("–", "-").replace("—", "-")
 
+    # Remove only a leading numeric label such as:
+    # 4) Hydrology, 4. Hydrology, 4 - Hydrology, 4: Hydrology, 4 Hydrology
+    v = re.sub(r"^\s*\d+\s*(?:[\)\.\-:]\s*)?", "", v)
+    v = re.sub(r"\s+", " ", v).strip()
+    if not v:
+        return "Unknown"
+
+    # Normalize common punctuation/wording variants before exact matching.
+    key = (
+        v.lower()
+        .replace("–", "-")
+        .replace("—", "-")
+        .replace("&", "and")
+    )
+    key = re.sub(r"\s+", " ", key).strip()
+
+    canonical_map = {
+        "landform and topography": "Landform and topography",
+        "landform topography": "Landform and topography",
+        "hydrology": "Hydrology",
+        "land cover and agriculture": "Land cover and Agriculture",
+        "land cover agriculture": "Land cover and Agriculture",
+        "cultural and historical features": "Cultural and historical features",
+        "cultural historical features": "Cultural and historical features",
+        "visual and sensory qualities": "Visual and Sensory qualities",
+        "visual sensory qualities": "Visual and Sensory qualities",
+        "wildlife and biodiversity richness": "Wildlife and Biodiversity richness",
+        "wildlife biodiversity richness": "Wildlife and Biodiversity richness",
+        "wildlife and biodiversity": "Wildlife and Biodiversity richness",
+        "infrastructure and economic factors": "Infrastructure and Economic factors",
+        "infrastructure economic factors": "Infrastructure and Economic factors",
+        "community and governance": "Community and Governance",
+        "community governance": "Community and Governance",
+    }
+
+    if key in canonical_map:
+        return canonical_map[key]
+
+    # Preserve the existing alias table for any already-supported variants.
     if key in LCAT_ALIASES:
         return LCAT_ALIASES[key]
-
-    for alias, canonical in LCAT_ALIASES.items():
-        if alias in key or key in alias:
-            return canonical
-
-    for canonical in LCAT_ELEMENTS:
-        if key == canonical.lower():
-            return canonical
 
     return "Unknown"
 
@@ -1817,22 +1843,20 @@ if dashboard_mode == "LCAT & GPDP":
                         style = trajectory_style[status_key]
                         display_status = status_key if status_key != "Unknown" else "Unknown"
 
-                        # FIX 1: Indentation removed entirely from the inner HTML tags within 
-                        # this string to prevent Markdown from identifying it as an indented code block.
-                        st.markdown(
-                            f"""
+                        # Use Streamlit's HTML renderer so the status card cannot be
+                        # interpreted as a Markdown code block.
+                        trajectory_html = f"""
 <div style="background:#F4F1E7; border:1px solid #C9C2AC; border-radius:8px; padding:12px 10px; text-align:center; display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:85px; margin-bottom:12px;">
 <div style="font-family:'IBM Plex Mono',monospace; font-size:10.5px; line-height:1.3; color:#4C5646; margin-bottom:8px; height:28px; display:flex; align-items:center; justify-content:center;">
 {html.escape(theme)}
 </div>
 <div style="background:{style['bg']}; color:{style['color']}; border-radius:14px; padding:4px 10px; font-family:'IBM Plex Mono',monospace; font-size:11px; font-weight:600; display:inline-flex; align-items:center; gap:4px;">
 <span style="font-weight:700; font-size:13px;">{style['arrow']}</span>
-{display_status}
+{html.escape(display_status)}
 </div>
 </div>
-""",
-                            unsafe_allow_html=True,
-                        )
+"""
+                        st.html(trajectory_html)
             # Subtle spacer below trajectory section
             st.markdown("<div style='margin-bottom: 24px;'></div>", unsafe_allow_html=True)
 
