@@ -629,24 +629,26 @@ def normalize_theme(value: Any) -> str:
     if pd.isna(value):
         return "Unknown"
 
-    v = str(value).lower()
+    v = str(value).strip()
+    # Punctuation mark made optional to handle inputs like "4 Hydrology" or "1 Landform"
+    v = re.sub(r"^\s*\d+\s*[\)\.\-:]?\s*", "", v)
+    v = re.sub(r"\s+", " ", v).strip()
     
-    if "landform" in v or "topograph" in v:
-        return "Landform and topography"
-    if "hydro" in v or "water" in v:
-        return "Hydrology"
-    if "cover" in v or "agri" in v:
-        return "Land cover and Agriculture"
-    if "cultur" in v or "historic" in v:
-        return "Cultural and historical features"
-    if "visual" in v or "sensor" in v:
-        return "Visual and Sensory qualities"
-    if "wildlife" in v or "biodivers" in v:
-        return "Wildlife and Biodiversity richness"
-    if "infrastructur" in v or "econom" in v:
-        return "Infrastructure and Economic factors"
-    if "communit" in v or "govern" in v:
-        return "Community and Governance"
+    if not v:
+        return "Unknown"
+        
+    key = v.lower().replace("–", "-").replace("—", "-")
+
+    if key in LCAT_ALIASES:
+        return LCAT_ALIASES[key]
+
+    for alias, canonical in LCAT_ALIASES.items():
+        if alias in key or key in alias:
+            return canonical
+
+    for canonical in LCAT_ELEMENTS:
+        if key == canonical.lower():
+            return canonical
 
     return "Unknown"
 
@@ -937,15 +939,15 @@ def make_map(
     )
 
     tile_dict = {
-        "OpenStreetMap": "OpenStreetMap",
         "CartoDB Positron": "CartoDB positron",
+        "OpenStreetMap": "OpenStreetMap",
         "CartoDB Dark": "CartoDB dark_matter",
     }
 
     m = folium.Map(
         location=[center_lat, center_lng],
         zoom_start=zoom_start,
-        tiles=tile_dict.get(basemap_choice, "OpenStreetMap"),
+        tiles=tile_dict.get(basemap_choice, "CartoDB positron"),
         control_scale=True,
     )
 
@@ -1158,7 +1160,7 @@ if "pillar_filter" not in st.session_state:
     st.session_state["pillar_filter"] = "All"
 
 if "basemap_choice" not in st.session_state:
-    st.session_state["basemap_choice"] = "OpenStreetMap"
+    st.session_state["basemap_choice"] = "CartoDB Positron"
 
 
 # =============================================================================
@@ -1815,6 +1817,8 @@ if dashboard_mode == "LCAT & GPDP":
                         style = trajectory_style[status_key]
                         display_status = status_key if status_key != "Unknown" else "Unknown"
 
+                        # FIX 1: Indentation removed entirely from the inner HTML tags within 
+                        # this string to prevent Markdown from identifying it as an indented code block.
                         st.markdown(
                             f"""
 <div style="background:#F4F1E7; border:1px solid #C9C2AC; border-radius:8px; padding:12px 10px; text-align:center; display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:85px; margin-bottom:12px;">
