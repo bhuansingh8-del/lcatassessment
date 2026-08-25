@@ -8,7 +8,7 @@ import numpy as np
 import os
 import glob
 import re
-from typing import Dict, Any, List, Optional
+from typing import Any
 from plotly.subplots import make_subplots
 import textwrap
 
@@ -26,7 +26,7 @@ st.set_page_config(
     page_title="LCAT — Landscape Character Assessment Tool",
     page_icon="🌿",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="collapsed",
 )
 
 st.markdown("""
@@ -58,15 +58,9 @@ st.markdown("""
         font-family: 'IBM Plex Sans', sans-serif;
     }
     
-    /* Hide Default Header to replace with our custom one */
+    /* Hide Default Header */
     header[data-testid="stHeader"] {
         display: none;
-    }
-    
-    /* Clean Sidebar (Only used for Dashboard Mode switch) */
-    [data-testid="stSidebar"] {
-        background-color: var(--paper-deep);
-        border-right: 1px solid var(--line);
     }
     
     /* Typography Overrides */
@@ -112,7 +106,7 @@ st.markdown("""
         align-items: center;
         gap: 20px;
         border-bottom: 3px solid var(--ochre);
-        margin-top: -60px; /* Offset Streamlit default padding */
+        margin-top: -60px; 
         margin-bottom: 0px;
         margin-left: -5rem;
         margin-right: -5rem;
@@ -121,12 +115,6 @@ st.markdown("""
     .brand { display: flex; flex-direction: column; line-height: 1.1; margin-right: 12px; }
     .brand b { font-family: 'Space Grotesk', sans-serif; font-size: 19px; letter-spacing: 0.5px; }
     .brand span { font-size: 11px; color: #C9D3C2; letter-spacing: 0.4px; }
-    .scale-tabs { display: flex; gap: 2px; margin-left: auto; background: rgba(0,0,0,0.2); padding: 3px; border-radius: 8px; }
-    .scale-tabs button {
-        background: transparent; border: none; color: #CBD4C4; font-family: 'IBM Plex Mono', monospace;
-        font-size: 11.5px; letter-spacing: 0.3px; padding: 7px 12px; border-radius: 6px;
-    }
-    .scale-tabs button.active { background: var(--ochre); color: #241505; font-weight: 600; }
     
     /* Breadcrumb */
     .breadcrumb {
@@ -145,7 +133,6 @@ st.markdown("""
     .layer-toggle {
         display: flex; align-items: center; justify-content: space-between; padding: 7px 2px; font-size: 13.5px; color: var(--ink);
     }
-    .swatch { width: 11px; height: 11px; border-radius: 2px; margin-right: 8px; flex: none; display: inline-block;}
 
     /* Center & Right Cards */
     .html-card {
@@ -200,13 +187,16 @@ st.markdown("""
         font-family: 'IBM Plex Mono', monospace;
     }
     
-    /* Overrides for tabs / mode switch */
-    .stRadio > div { flex-direction: column; }
+    .stButton>button {
+        background-color: var(--paper-deep); color: var(--ink); border: 1px solid var(--line);
+        font-family: 'IBM Plex Mono', monospace; font-size: 12px; width: 100%; border-radius: 6px;
+    }
+    .stButton>button:hover { background-color: var(--line); color: var(--ink); border-color: var(--pine); }
 </style>
 """, unsafe_allow_html=True)
 
 # -----------------------------------------------------------------------------
-# 2. SEED DATA & CONSTANTS
+# 2. CONSTANTS & SEED MAPPINGS
 # -----------------------------------------------------------------------------
 LCAT_ELEMENTS = [
     "Landform and topography",
@@ -220,25 +210,20 @@ LCAT_ELEMENTS = [
 ]
 
 def normalize_theme(x: Any) -> str:
-    if pd.isna(x):
-        return "Unknown"
+    if pd.isna(x): return "Unknown"
     v = str(x).strip()
     v = re.sub(r'^[\d]+\s*[\)\.]?\s*', '', v).strip()
     v_lower = v.lower()
     for valid in LCAT_ELEMENTS:
-        if valid.lower() == v_lower or valid.lower() in v_lower:
+        if valid.lower() in v_lower:
             return valid
     return "Unknown"
 
 ELEMENT_COLORS = {
-    "Landform and topography": "#D89A2B",
-    "Hydrology": "#0284c7", 
-    "Land cover and Agriculture": "#16a34a",
-    "Cultural and historical features": "#db2777",
-    "Visual and Sensory qualities": "#7c3aed",
-    "Wildlife and Biodiversity richness": "#ea580c",
-    "Infrastructure and Economic factors": "#64748b",
-    "Community and Governance": "#ca8a04",
+    "Landform and topography": "#D89A2B", "Hydrology": "#0284c7", 
+    "Land cover and Agriculture": "#16a34a", "Cultural and historical features": "#db2777",
+    "Visual and Sensory qualities": "#7c3aed", "Wildlife and Biodiversity richness": "#ea580c",
+    "Infrastructure and Economic factors": "#64748b", "Community and Governance": "#ca8a04",
     "Unknown": "#cbd5e1"
 }
 
@@ -249,124 +234,61 @@ tier_colors = {
 }
 
 DISTRICT_CENTERS = {
-    "Bastar": {"lat": 19.35, "lng": 81.80, "bounds": [[18.90, 81.55], [19.75, 82.50]]},
-    "Kanker": {"lat": 20.27, "lng": 81.49, "bounds": [[19.90, 80.95], [20.75, 81.95]]},
-    "Dhamtari": {"lat": 20.70, "lng": 81.55, "bounds": [[20.40, 81.20], [21.05, 81.90]]},
-    "Kondagaon": {"lat": 19.60, "lng": 81.66, "bounds": [[19.30, 81.30], [19.90, 82.00]]},
-    "Aligarh": {"lat": 27.89, "lng": 78.08, "bounds": [[27.65, 77.40], [28.25, 78.20]]},
-    "Banda": {"lat": 25.48, "lng": 80.33, "bounds": [[24.85, 80.05], [25.55, 80.85]]},
-    "Jhabua": {"lat": 22.76, "lng": 74.59, "bounds": [[22.50, 74.30], [23.00, 74.80]]},
-    "Sehore": {"lat": 23.20, "lng": 77.08, "bounds": [[22.90, 76.80], [23.50, 77.40]]},
-    "Prayagraj": {"lat": 25.43, "lng": 81.84, "bounds": [[25.10, 81.50], [25.80, 82.20]]},
-    "Dhar": {"lat": 22.59, "lng": 75.30, "bounds": [[22.30, 75.00], [22.90, 75.60]]}
+    "Bastar": {"lat": 19.35, "lng": 81.80}, "Kanker": {"lat": 20.27, "lng": 81.49},
+    "Dhamtari": {"lat": 20.70, "lng": 81.55}, "Kondagaon": {"lat": 19.60, "lng": 81.66},
+    "Aligarh": {"lat": 27.89, "lng": 78.08}, "Banda": {"lat": 25.48, "lng": 80.33},
+    "Jhabua": {"lat": 22.76, "lng": 74.59}, "Sehore": {"lat": 23.20, "lng": 77.08},
+    "Prayagraj": {"lat": 25.43, "lng": 81.84}, "Dhar": {"lat": 22.59, "lng": 75.30}
 }
 
+# -----------------------------------------------------------------------------
+# 3. DATA LOADING (Real files only)
+# -----------------------------------------------------------------------------
 @st.cache_data
 def get_raw_gpdp_data() -> pd.DataFrame:
-    """Loads all GPDP data in raw format for analytical filtering."""
+    """Loads all GPDP data in raw format, parsing all sheets strictly from files."""
     data_dir = "data"
-    raw_df = pd.DataFrame()
+    df_list = []
+    
     if os.path.exists(data_dir):
         all_files = glob.glob(os.path.join(data_dir, "*.xlsx")) + glob.glob(os.path.join(data_dir, "*.csv"))
-        gpdp_files = [f for f in all_files if "GPDP" in os.path.basename(f) or "gpdp" in os.path.basename(f).lower()]
-        if gpdp_files:
-            df_list = []
-            for f in gpdp_files:
-                try:
-                    if f.endswith('.csv'):
-                        df_list.append(pd.read_csv(f))
-                    else:
-                        df_dict = pd.read_excel(f, sheet_name=None)
-                        if df_dict:
-                            df_list.append(pd.concat(df_dict.values(), ignore_index=True))
-                except Exception:
-                    pass
-            if df_list:
-                raw_df = pd.concat(df_list, ignore_index=True)
-                
-                # Cleanup for analysis
-                if 'Theme' in raw_df.columns:
-                    raw_df['Clean_Theme'] = raw_df['Theme'].apply(normalize_theme)
-                else:
-                    raw_df['Clean_Theme'] = 'Unknown'
-                    
-                if 'Tier' in raw_df.columns:
-                    raw_df['Clean_Tier'] = raw_df['Tier'].astype(str).apply(
-                        lambda x: 'Tier 1 — Community Led' if 'Tier 1' in x else (
-                            'Tier 2 — Minor Support' if 'Tier 2' in x else (
-                            'Tier 3 — External Support & Convergence' if 'Tier 3' in x else 'Unknown'
-                        ))
-                    )
-                else:
-                    raw_df['Clean_Tier'] = 'Unknown'
-                    
-                pillar_col = 'Pillars' if 'Pillars' in raw_df.columns else ('Pillar' if 'Pillar' in raw_df.columns else None)
-                if pillar_col:
-                    raw_df['Clean_Pillar'] = raw_df[pillar_col].astype(str).fillna('Unknown')
-                else:
-                    raw_df['Clean_Pillar'] = 'Unknown'
-                    
-    return raw_df
-
-@st.cache_data
-def load_data_from_folder() -> pd.DataFrame:
-    """Aggregates GPDP data to Village level for map display."""
-    raw_df = get_raw_gpdp_data()
-    
-    if not raw_df.empty:
-        villages = []
-        np.random.seed(42)
+        gpdp_files = [f for f in all_files if "GPDP" in os.path.basename(f).upper() or "GPDP" in os.path.basename(f)]
         
-        required_cols = ['State', 'District', 'Block', 'Panchayat/Village']
-        missing = [c for c in required_cols if c not in raw_df.columns]
+        for f in gpdp_files:
+            try:
+                if f.endswith('.csv'):
+                    df_list.append(pd.read_csv(f))
+                else:
+                    dfs = pd.read_excel(f, sheet_name=None)
+                    df_list.extend(dfs.values())
+            except Exception:
+                pass
+                
+    if df_list:
+        raw_df = pd.concat(df_list, ignore_index=True)
+        # Normalize core dimensions
+        raw_df['Clean_Theme'] = raw_df.get('Theme', pd.Series(dtype=str)).apply(normalize_theme)
         
-        if not missing:
-            grouped = raw_df.groupby(['State', 'District', 'Block', 'Panchayat/Village'])
-            for name, group in grouped:
-                state, district, block, village_name = name
-                total_demand = len(group)
-                
-                t1 = len(group[group['Clean_Tier'] == 'Tier 1 — Community Led'])
-                t2 = len(group[group['Clean_Tier'] == 'Tier 2 — Minor Support'])
-                t3 = len(group[group['Clean_Tier'] == 'Tier 3 — External Support & Convergence'])
-                
-                dominant = group['Clean_Theme'].mode()
-                dom_element = dominant.iloc[0] if not dominant.empty else "Unknown"
-                
-                center = DISTRICT_CENTERS.get(district, {"lat": 21.0, "lng": 81.0})
-                lat = center["lat"] + np.random.uniform(-0.15, 0.15)
-                lng = center["lng"] + np.random.uniform(-0.15, 0.15)
-                
-                villages.append({
-                    "name": village_name,
-                    "state": state,
-                    "district": district,
-                    "block": block,
-                    "lat": lat,
-                    "lng": lng,
-                    "totalDemand": total_demand,
-                    "tier1": t1,
-                    "tier2": t2,
-                    "tier3": t3,
-                    "dominantElement": dom_element
-                })
-            if villages:
-                return pd.DataFrame(villages)
-
-    # Fallback
-    fallback_data = [
-        {"name": "Sidesar", "state": "Chhattisgarh", "district": "Bastar", "block": "Bakawand", "lat": 19.12, "lng": 81.85, "totalDemand": 28, "tier1": 8, "tier2": 8, "tier3": 12, "dominantElement": "Land cover and Agriculture"},
-        {"name": "Karpawand", "state": "Chhattisgarh", "district": "Bastar", "block": "Bakawand", "lat": 19.18, "lng": 81.92, "totalDemand": 45, "tier1": 15, "tier2": 18, "tier3": 12, "dominantElement": "Hydrology"},
-        {"name": "Nagarnar", "state": "Chhattisgarh", "district": "Bastar", "block": "Jagdalpur", "lat": 19.08, "lng": 82.10, "totalDemand": 36, "tier1": 10, "tier2": 14, "tier3": 12, "dominantElement": "Infrastructure and Economic factors"},
-        {"name": "Narharpur", "state": "Chhattisgarh", "district": "Kanker", "block": "Narharpur", "lat": 20.35, "lng": 81.65, "totalDemand": 40, "tier1": 12, "tier2": 16, "tier3": 12, "dominantElement": "Hydrology"},
-    ]
-    return pd.DataFrame(fallback_data)
-
-def get_demand_color(demand: int) -> str:
-    if demand <= 35: return "#fef08a" 
-    elif demand <= 65: return "#f59e0b" 
-    elif demand <= 90: return "#ea580c" 
-    return "#712416" 
+        if 'Tier' in raw_df.columns:
+            raw_df['Clean_Tier'] = raw_df['Tier'].astype(str).apply(
+                lambda x: 'Tier 1 — Community Led' if 'Tier 1' in x else (
+                    'Tier 2 — Minor Support' if 'Tier 2' in x else (
+                    'Tier 3 — External Support & Convergence' if 'Tier 3' in x else 'Unknown'
+                ))
+            )
+        else:
+            raw_df['Clean_Tier'] = 'Unknown'
+            
+        pillar_col = 'Pillars' if 'Pillars' in raw_df.columns else ('Pillar' if 'Pillar' in raw_df.columns else None)
+        raw_df['Clean_Pillar'] = raw_df[pillar_col].astype(str).fillna('Unknown') if pillar_col else 'Unknown'
+        
+        # Ensure geographic columns exist
+        for col in ['State', 'District', 'Block', 'Panchayat/Village']:
+            if col not in raw_df.columns:
+                raw_df[col] = "Unknown"
+        return raw_df
+        
+    return pd.DataFrame()
 
 @st.cache_data
 def load_climate_data() -> pd.DataFrame:
@@ -378,41 +300,24 @@ def load_climate_data() -> pd.DataFrame:
             return df
         except Exception:
             pass
-    return pd.DataFrame([
-        {
-            "state": "Unknown", "district": "Unknown",
-            "canopy_moisture_baseline": 0.0, "canopy_moisture_recent": 0.0,
-            "canopy_moisture_change": 0.0, "canopy_moisture_pct_change": "0%",
-            "canopy_moisture_status": "Stable",
-            "summer_lst_baseline_c": 0.0, "summer_lst_recent_c": 0.0,
-            "summer_lst_change_c": 0.0, "summer_lst_status": "Stable",
-            "extreme_heat_days_baseline": 0, "extreme_heat_days_recent": 0,
-            "extreme_heat_days_change": 0
-        }
-    ])
+    return pd.DataFrame()
 
 # -----------------------------------------------------------------------------
-# 3. THEME INSIGHTS MODAL OVERLAY (Preserved Functionality, Restyled)
+# 4. MODALS & OVERLAYS
 # -----------------------------------------------------------------------------
 @st.dialog("Theme Insights", width="large")
-def show_theme_overlay(theme: str, state: str, district: str, village: str):
+def show_theme_overlay(theme: str, state: str, district: str, village: str, raw_df: pd.DataFrame):
     st.markdown(f"<h2 style='color: var(--pine); margin-top: 0; margin-bottom: 20px; font-family: Space Grotesk;'>{theme}</h2>", unsafe_allow_html=True)
     
     col_act, col_voice = st.columns([1.2, 1.0])
     
     with col_act:
         st.markdown("<div class='section-label' style='margin-top:0;'>Priority Actions</div>", unsafe_allow_html=True)
-        raw_df = get_raw_gpdp_data()
-        
         if not raw_df.empty:
-            if state != "Unknown" and 'State' in raw_df.columns:
-                raw_df = raw_df[raw_df['State'] == state]
-            if district != "All Districts" and 'District' in raw_df.columns:
-                raw_df = raw_df[raw_df['District'] == district]
-            if village != "All Villages" and 'Panchayat/Village' in raw_df.columns:
-                raw_df = raw_df[raw_df['Panchayat/Village'] == village]
-                
-            df_gpdp = raw_df[raw_df['Clean_Theme'] == theme]
+            df_gpdp = raw_df[raw_df['State'] == state] if state != "Unknown" else raw_df
+            if district != "All Districts": df_gpdp = df_gpdp[df_gpdp['District'] == district]
+            if village != "All Villages": df_gpdp = df_gpdp[df_gpdp['Panchayat/Village'] == village]
+            df_gpdp = df_gpdp[df_gpdp['Clean_Theme'] == theme]
             
             if not df_gpdp.empty:
                 st.markdown(f"<div style='font-size: 0.95rem; color: var(--ink-soft); margin-bottom: 20px; font-family: IBM Plex Mono;'><b>{len(df_gpdp)}</b> actions</div>", unsafe_allow_html=True)
@@ -421,19 +326,16 @@ def show_theme_overlay(theme: str, state: str, district: str, village: str):
                     "Tier 1 — Community Led": {"color": "#d97706", "actions": []},
                     "Tier 2 — Minor Support": {"color": "#712416", "actions": []},
                     "Tier 3 — External Support & Convergence": {"color": "#0ea5e9", "actions": []},
-                    "Unknown": {"color": "#64748b", "actions": []}
                 }
                 
                 for _, row in df_gpdp.iterrows():
-                    tier_groups[row['Clean_Tier']]["actions"].append({
-                        "text": row.get("Priority Action", "N/A"),
-                        "pillars": row['Clean_Pillar']
-                    })
+                    tier = row['Clean_Tier']
+                    if tier in tier_groups:
+                        tier_groups[tier]["actions"].append({"text": row.get("Priority Action", "N/A"), "pillars": row['Clean_Pillar']})
                 
                 for group_name, group_data in tier_groups.items():
                     actions = group_data["actions"]
                     color = group_data["color"]
-                    
                     if actions:
                         st.markdown(f"""
                         <div style="margin-top: 16px; margin-bottom: 12px;">
@@ -443,14 +345,13 @@ def show_theme_overlay(theme: str, state: str, district: str, village: str):
                         """, unsafe_allow_html=True)
                         
                         for idx, act in enumerate(actions, 1):
-                            pillar_html = f'<span style="background: var(--paper-deep); padding: 2px 6px; border-radius: 4px; font-size: 0.75rem; color: var(--ink-soft);">{act["pillars"]}</span>' if act["pillars"] != "Unknown" else ''
-                            
+                            pill_html = f'<span style="background: var(--paper-deep); padding: 2px 6px; border-radius: 4px; font-size: 0.75rem; color: var(--ink-soft);">{act["pillars"]}</span>' if act["pillars"] != "Unknown" else ''
                             st.markdown(f"""
                             <div style="background: var(--card); border: 1px solid var(--line); border-left: 4px solid {color}; border-radius: 6px; padding: 12px; margin-bottom: 12px; display: flex; gap: 12px;">
                                 <div style="color: {color}; font-weight: 700; font-size: 0.95rem; font-family: IBM Plex Mono;">{idx:02d}</div>
                                 <div>
                                     <div style="font-size: 0.95rem; color: var(--ink); font-weight: 500; margin-bottom: 6px; line-height: 1.4;">{act['text']}</div>
-                                    <div style="margin-top: 6px;">{pillar_html}</div>
+                                    <div style="margin-top: 6px;">{pill_html}</div>
                                 </div>
                             </div>
                             """, unsafe_allow_html=True)
@@ -463,68 +364,60 @@ def show_theme_overlay(theme: str, state: str, district: str, village: str):
         st.markdown("<div class='section-label' style='margin-top:0;'>Community Voices</div>", unsafe_allow_html=True)
         quotes_path = "data/lcat/LCAT_Verbatim_Quote_Classification.xlsx"
         if os.path.exists(quotes_path):
-            df_quotes = pd.read_excel(quotes_path)
-            if state != "Unknown":
-                df_quotes = df_quotes[df_quotes['State'] == state]
-            if district != "All Districts":
-                df_quotes = df_quotes[df_quotes['District'] == district]
+            try:
+                df_quotes = pd.read_excel(quotes_path)
+                if state != "Unknown": df_quotes = df_quotes[df_quotes['State'] == state]
+                if district != "All Districts": df_quotes = df_quotes[df_quotes['District'] == district]
+                df_quotes = df_quotes[df_quotes['Primary LCAT Element'] == theme]
                 
-            df_quotes = df_quotes[df_quotes['Primary LCAT Element'] == theme]
-            
-            display_quotes = pd.DataFrame()
-            fallback_used = False
-            
-            if village != "All Villages":
-                village_quotes = df_quotes[df_quotes['Village'] == village]
-                if not village_quotes.empty:
-                    display_quotes = village_quotes
+                display_quotes = pd.DataFrame()
+                fallback_used = False
+                
+                if village != "All Villages":
+                    village_quotes = df_quotes[df_quotes['Village'] == village]
+                    if not village_quotes.empty: display_quotes = village_quotes
+                    else: 
+                        display_quotes = df_quotes
+                        fallback_used = True
                 else:
                     display_quotes = df_quotes
-                    fallback_used = True
-            else:
-                display_quotes = df_quotes
-                
-            if fallback_used and not display_quotes.empty:
-                st.caption("Showing *District-level evidence* (No specific quotes for selected village)")
-                
-            if not display_quotes.empty:
-                for _, row in display_quotes.iterrows():
-                    quote = row.get("Verbatim Quote", "")
-                    if pd.isna(quote) or not str(quote).strip():
-                        continue
-                    speaker = row.get("Speaker / Attribution", "Community Member")
-                    st.markdown(f"""
-                    <div style="background: var(--card); border-left: 4px solid var(--moss); padding: 16px; margin-bottom: 16px; border-radius: 0 6px 6px 0; border: 1px solid var(--line); border-left-width: 4px;">
-                        <div style="font-size: 1.05rem; color: var(--ink); font-style: italic; margin-bottom: 12px;">"{quote}"</div>
-                        <div style="font-size: 0.8rem; color: var(--ink-soft); font-family: 'IBM Plex Mono', monospace;">
-                            <span style="font-weight: 600; color: var(--ink);">{speaker}</span>
+                    
+                if fallback_used and not display_quotes.empty:
+                    st.caption("Showing *District-level evidence* (No specific quotes for selected village)")
+                    
+                if not display_quotes.empty:
+                    for _, row in display_quotes.iterrows():
+                        quote = row.get("Verbatim Quote", "")
+                        if pd.isna(quote) or not str(quote).strip(): continue
+                        speaker = row.get("Speaker / Attribution", "Community Member")
+                        st.markdown(f"""
+                        <div style="background: var(--card); border-left: 4px solid var(--moss); padding: 16px; margin-bottom: 16px; border-radius: 0 6px 6px 0; border: 1px solid var(--line); border-left-width: 4px;">
+                            <div style="font-size: 1.05rem; color: var(--ink); font-style: italic; margin-bottom: 12px;">"{quote}"</div>
+                            <div style="font-size: 0.8rem; color: var(--ink-soft); font-family: 'IBM Plex Mono', monospace;">
+                                <span style="font-weight: 600; color: var(--ink);">{speaker}</span>
+                            </div>
                         </div>
-                    </div>
-                    """, unsafe_allow_html=True)
-            else:
-                st.info("No verbatim quotes available for this theme at the selected geography.")
+                        """, unsafe_allow_html=True)
+                else:
+                    st.info("No verbatim quotes available for this theme at the selected geography.")
+            except Exception:
+                st.info("Error reading Community Voices file.")
         else:
             st.info("Community Voices dataset not found.")
 
 # -----------------------------------------------------------------------------
-# 4. SIDEBAR (MODE TOGGLE ONLY)
+# MAIN APP EXECUTION
 # -----------------------------------------------------------------------------
 with st.sidebar:
     st.markdown('<div style="font-family: Space Grotesk; font-size: 14px; font-weight: bold; color: var(--pine); margin-bottom: 10px;">DASHBOARD MODE</div>', unsafe_allow_html=True)
     dashboard_mode = st.radio("Mode", ["LCAT & GPDP", "Climate Signals"], label_visibility="collapsed")
 
-# -----------------------------------------------------------------------------
-# MAIN APP: LCAT & GPDP MODE
-# -----------------------------------------------------------------------------
 if dashboard_mode == "LCAT & GPDP":
-    # --- GLOBAL DATA ---
-    df_villages = load_data_from_folder()
     raw_gpdp_df = get_raw_gpdp_data()
     
-    # Pre-compute available geographies
-    available_states = df_villages["state"].dropna().unique().tolist() if not df_villages.empty else ["Unknown"]
-
-    # --- HEADER ---
+    # -------------------------------------------------------------------------
+    # LAYOUT & CONTROLS
+    # -------------------------------------------------------------------------
     st.markdown("""
     <div class="lcat-header">
       <svg class="brandmark" viewBox="0 0 40 40" fill="none">
@@ -533,54 +426,88 @@ if dashboard_mode == "LCAT & GPDP":
         <circle cx="20" cy="20" r="5" stroke="#FCFBF6" stroke-width="2"/>
       </svg>
       <div class="brand"><b>LCAT</b><span>LANDSCAPE CHARACTER ASSESSMENT TOOL</span></div>
-      <div class="scale-tabs">
-        <button>India</button><button>State</button><button>District</button>
-        <button>Block</button><button>GP</button><button class="active">Village</button>
-      </div>
     </div>
     """, unsafe_allow_html=True)
 
-    # --- LAYOUT DEFINITION ---
     col_left, col_center, col_right = st.columns([1.2, 2.5, 1.4], gap="large")
 
-    # --- LEFT PANEL: FILTERS ---
     with col_left:
         st.markdown('<div class="section-label">Geographic selection</div>', unsafe_allow_html=True)
         
+        available_states = raw_gpdp_df["State"].dropna().unique().tolist() if not raw_gpdp_df.empty else ["No Data"]
         selected_state = st.selectbox("State", available_states)
         
-        dist_options = ["All Districts"] + df_villages[df_villages["state"] == selected_state]["district"].dropna().unique().tolist()
+        if not raw_gpdp_df.empty and selected_state != "No Data":
+            state_df = raw_gpdp_df[raw_gpdp_df["State"] == selected_state]
+            dist_options = ["All Districts"] + state_df["District"].dropna().unique().tolist()
+        else:
+            dist_options = ["All Districts"]
         selected_district = st.selectbox("District", dist_options)
         
-        if selected_district != "All Districts":
-            block_options = ["All Blocks"] + df_villages[(df_villages["state"] == selected_state) & (df_villages["district"] == selected_district)]["block"].dropna().unique().tolist()
-            vill_options = ["All Villages"] + df_villages[(df_villages["state"] == selected_state) & (df_villages["district"] == selected_district)]["name"].dropna().unique().tolist()
+        if selected_district != "All Districts" and not raw_gpdp_df.empty:
+            dist_df = state_df[state_df["District"] == selected_district]
+            block_options = ["All Blocks"] + dist_df["Block"].dropna().unique().tolist()
+            vill_options = ["All Villages"] + dist_df["Panchayat/Village"].dropna().unique().tolist()
         else:
             block_options = ["All Blocks"]
-            vill_options = ["All Villages"] + df_villages[df_villages["state"] == selected_state]["name"].dropna().unique().tolist()
+            vill_options = ["All Villages"] + (state_df["Panchayat/Village"].dropna().unique().tolist() if not raw_gpdp_df.empty else [])
             
         selected_block = st.selectbox("Block", block_options)
         
-        if selected_block != "All Blocks":
-            vill_options = ["All Villages"] + df_villages[(df_villages["state"] == selected_state) & (df_villages["district"] == selected_district) & (df_villages["block"] == selected_block)]["name"].dropna().unique().tolist()
+        if selected_block != "All Blocks" and not raw_gpdp_df.empty:
+            block_df = state_df[(state_df["District"] == selected_district) & (state_df["Block"] == selected_block)]
+            vill_options = ["All Villages"] + block_df["Panchayat/Village"].dropna().unique().tolist()
             
         selected_village = st.selectbox("Gram Panchayat / Village", vill_options)
         
         st.markdown('<div class="section-label" style="margin-top: 30px;">Map layers</div>', unsafe_allow_html=True)
-        st.checkbox("LULC (Placeholder)", value=True)
-        st.checkbox("NDVI (Placeholder)", value=True)
-        st.checkbox("Soil (Placeholder)", value=False)
-        st.checkbox("DEM / Slope (Placeholder)", value=False)
-        st.checkbox("Rivers (Placeholder)", value=True)
+        st.checkbox("LULC", value=True, help="Placeholder for future spatial layer")
+        st.checkbox("NDVI", value=True, help="Placeholder for future spatial layer")
+        st.checkbox("Soil", value=False, help="Placeholder for future spatial layer")
+        st.checkbox("DEM / Slope", value=False, help="Placeholder for future spatial layer")
+        st.checkbox("Rivers", value=True, help="Placeholder for future spatial layer")
         st.checkbox("LCAT choropleth", value=True)
         
         st.markdown('<div class="section-label" style="margin-top: 30px;">Filter priority actions</div>', unsafe_allow_html=True)
-        selected_theme = st.selectbox("Landscape Themes", ["All"] + LCAT_ELEMENTS)
+        
+        # Theme 'expandable' chip behavior simulated via selectbox state
+        if 'show_all_themes' not in st.session_state:
+            st.session_state.show_all_themes = False
+            
+        if not st.session_state.show_all_themes:
+            theme_options = ["All", "Hydrology", "Land cover and Agriculture", "+ 6 more themes"]
+        else:
+            theme_options = ["All"] + LCAT_ELEMENTS
+            
+        selected_theme_raw = st.selectbox("Landscape Themes", theme_options)
+        
+        if selected_theme_raw == "+ 6 more themes":
+            st.session_state.show_all_themes = True
+            st.rerun()
+            
+        selected_theme = selected_theme_raw if selected_theme_raw != "+ 6 more themes" else "All"
+        
         selected_tier = st.selectbox("Tier", ["All", "Tier 1 — Community Led", "Tier 2 — Minor Support", "Tier 3 — External Support & Convergence"])
         selected_pillar = st.selectbox("Pillar", ["All", "Restoration", "Adaptation", "Mitigation"])
 
-    # --- BREADCRUMB ---
-    crumb_state = selected_state if selected_state != "Unknown" else "State"
+    # -------------------------------------------------------------------------
+    # DATA FILTERING (Applying the rules accurately to real data)
+    # -------------------------------------------------------------------------
+    filtered_df = raw_gpdp_df.copy()
+    if not filtered_df.empty:
+        if selected_state != "No Data": filtered_df = filtered_df[filtered_df['State'] == selected_state]
+        if selected_district != "All Districts": filtered_df = filtered_df[filtered_df['District'] == selected_district]
+        if selected_block != "All Blocks": filtered_df = filtered_df[filtered_df['Block'] == selected_block]
+        if selected_village != "All Villages": filtered_df = filtered_df[filtered_df['Panchayat/Village'] == selected_village]
+        
+        if selected_theme != "All": filtered_df = filtered_df[filtered_df['Clean_Theme'] == selected_theme]
+        if selected_tier != "All": filtered_df = filtered_df[filtered_df['Clean_Tier'] == selected_tier]
+        if selected_pillar != "All": filtered_df = filtered_df[filtered_df['Clean_Pillar'].str.contains(selected_pillar, case=False, na=False)]
+
+    # -------------------------------------------------------------------------
+    # CENTER MAP & SUMMARY
+    # -------------------------------------------------------------------------
+    crumb_state = selected_state if selected_state != "No Data" else "State"
     crumb_dist = selected_district if selected_district != "All Districts" else "District"
     crumb_block = selected_block if selected_block != "All Blocks" else "Block"
     crumb_vill = selected_village if selected_village != "All Villages" else "Village"
@@ -596,67 +523,55 @@ if dashboard_mode == "LCAT & GPDP":
     </div>
     """, unsafe_allow_html=True)
 
-    # --- FILTERING LOGIC ---
-    # 1. Map DF (Aggregated)
-    filtered_map_df = df_villages[df_villages["state"] == selected_state]
-    if selected_district != "All Districts": filtered_map_df = filtered_map_df[filtered_map_df["district"] == selected_district]
-    if selected_block != "All Blocks": filtered_map_df = filtered_map_df[filtered_map_df["block"] == selected_block]
-    if selected_village != "All Villages": filtered_map_df = filtered_map_df[filtered_map_df["name"] == selected_village]
-    
-    # 2. Analytical DF (Raw actions)
-    filtered_raw_df = raw_gpdp_df[raw_gpdp_df['State'] == selected_state] if not raw_gpdp_df.empty else pd.DataFrame()
-    if not filtered_raw_df.empty:
-        if selected_district != "All Districts": filtered_raw_df = filtered_raw_df[filtered_raw_df['District'] == selected_district]
-        if selected_block != "All Blocks": filtered_raw_df = filtered_raw_df[filtered_raw_df['Block'] == selected_block]
-        if selected_village != "All Villages": filtered_raw_df = filtered_raw_df[filtered_raw_df['Panchayat/Village'] == selected_village]
-        if selected_theme != "All": filtered_raw_df = filtered_raw_df[filtered_raw_df['Clean_Theme'] == selected_theme]
-        if selected_tier != "All": filtered_raw_df = filtered_raw_df[filtered_raw_df['Clean_Tier'] == selected_tier]
-        if selected_pillar != "All":
-            filtered_raw_df = filtered_raw_df[filtered_raw_df['Clean_Pillar'].str.contains(selected_pillar, case=False, na=False)]
-
-    # --- CENTER PANEL: MAP & SUMMARY ---
     with col_center:
         st.markdown('<div class="html-card">', unsafe_allow_html=True)
-        st.markdown(f"<div style='font-family: Space Grotesk; font-size: 15px; margin-bottom: 10px;'>{crumb_dist} — Geospatial View<br><span style='font-family: IBM Plex Mono; font-size: 11px; color: var(--ink-soft);'>LCAT active villages · 2026</span></div>", unsafe_allow_html=True)
+        st.markdown(f"<div style='font-family: Space Grotesk; font-size: 15px; margin-bottom: 10px;'>{crumb_dist} — Geospatial View<br><span style='font-family: IBM Plex Mono; font-size: 11px; color: var(--ink-soft);'>Filtered LCAT locations</span></div>", unsafe_allow_html=True)
         
-        # Build Map
-        center_lat = filtered_map_df["lat"].mean() if not filtered_map_df.empty else 21.0
-        center_lng = filtered_map_df["lng"].mean() if not filtered_map_df.empty else 81.0
-        zoom_start = 9 if selected_district != "All Districts" else 8
+        center_lat, center_lng = 21.0, 81.0
+        zoom_start = 8
+        if selected_district in DISTRICT_CENTERS:
+            center_lat, center_lng = DISTRICT_CENTERS[selected_district]["lat"], DISTRICT_CENTERS[selected_district]["lng"]
+            zoom_start = 9
         
         m = folium.Map(location=[center_lat, center_lng], zoom_start=zoom_start, tiles="CartoDB positron")
         
-        for _, v in filtered_map_df.iterrows():
-            radius = max(6, min(22, int(v["totalDemand"] * 0.35)))
-            fill_col = ELEMENT_COLORS.get(v["dominantElement"], "#cbd5e1")
+        # Build map points from filtered data
+        v_count = 0
+        if not filtered_df.empty:
+            village_groups = filtered_df.groupby('Panchayat/Village')
+            v_count = len(village_groups)
             
-            tooltip_html = f"""
-            <div style="font-family: 'IBM Plex Sans'; padding: 8px;">
-                <b>{v['name']} Village</b><br>
-                Demands: {v['totalDemand']}<br>
-                Dom. Theme: {v['dominantElement']}
-            </div>
-            """
-            folium.CircleMarker(
-                location=[v["lat"], v["lng"]],
-                radius=radius, color="#FCFBF6", weight=1.5, fill=True, fill_color=fill_col, fill_opacity=0.85,
-                tooltip=folium.Tooltip(tooltip_html, sticky=True)
-            ).add_to(m)
+            for v_name, group in village_groups:
+                total_demands = len(group)
+                dominant = group['Clean_Theme'].mode()
+                dom_element = dominant.iloc[0] if not dominant.empty else "Unknown"
+                
+                # Jitter for map display based on district center
+                dist_name = group['District'].iloc[0] if 'District' in group.columns else ""
+                dc = DISTRICT_CENTERS.get(dist_name, {"lat": center_lat, "lng": center_lng})
+                lat = dc["lat"] + np.random.uniform(-0.15, 0.15)
+                lng = dc["lng"] + np.random.uniform(-0.15, 0.15)
+                
+                radius = max(6, min(22, int(total_demands * 0.5)))
+                fill_col = ELEMENT_COLORS.get(dom_element, "#cbd5e1")
+                
+                folium.CircleMarker(
+                    location=[lat, lng], radius=radius, color="#FCFBF6", weight=1.5, fill=True, fill_color=fill_col, fill_opacity=0.85,
+                    tooltip=folium.Tooltip(f"<div style='font-family:IBM Plex Sans;padding:8px;'><b>{v_name}</b><br>Filtered Demands: {total_demands}<br>Dom. Theme: {dom_element}</div>", sticky=True)
+                ).add_to(m)
             
         st_folium(m, use_container_width=True, height=400, returned_objects=[])
         st.markdown('</div>', unsafe_allow_html=True)
 
         # Block Summary
-        if not filtered_raw_df.empty:
-            total_actions = len(filtered_raw_df)
-            t1_count = len(filtered_raw_df[filtered_raw_df['Clean_Tier'] == 'Tier 1 — Community Led'])
-            t2_count = len(filtered_raw_df[filtered_raw_df['Clean_Tier'] == 'Tier 2 — Minor Support'])
-            t3_count = len(filtered_raw_df[filtered_raw_df['Clean_Tier'] == 'Tier 3 — External Support & Convergence'])
+        if not filtered_df.empty:
+            total_actions = len(filtered_df)
+            t1_count = len(filtered_df[filtered_df['Clean_Tier'] == 'Tier 1 — Community Led'])
+            t2_count = len(filtered_df[filtered_df['Clean_Tier'] == 'Tier 2 — Minor Support'])
+            t3_count = len(filtered_df[filtered_df['Clean_Tier'] == 'Tier 3 — External Support & Convergence'])
         else:
             total_actions = t1_count = t2_count = t3_count = 0
             
-        v_count = len(filtered_map_df)
-        
         p1 = (t1_count / total_actions * 100) if total_actions > 0 else 0
         p2 = (t2_count / total_actions * 100) if total_actions > 0 else 0
         p3 = (t3_count / total_actions * 100) if total_actions > 0 else 0
@@ -677,7 +592,9 @@ if dashboard_mode == "LCAT & GPDP":
         </div>
         """, unsafe_allow_html=True)
 
-    # --- RIGHT PANEL: PROFILE ---
+    # -------------------------------------------------------------------------
+    # RIGHT PROFILE
+    # -------------------------------------------------------------------------
     with col_right:
         st.markdown(f"""
         <div class="profile-header">
@@ -686,7 +603,6 @@ if dashboard_mode == "LCAT & GPDP":
         </div>
         """, unsafe_allow_html=True)
         
-        # Score Block (NaN placeholders as requested)
         st.markdown("""
         <div class="score-block">
             <div class="txt" style="width: 100%">
@@ -697,7 +613,7 @@ if dashboard_mode == "LCAT & GPDP":
         </div>
         """, unsafe_allow_html=True)
         
-        st.markdown('<div class="section-label">Sub-scores (Pending)</div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-label">Sub-scores</div>', unsafe_allow_html=True)
         for lbl in ["Physical condition", "Vegetation condition", "Hydrological condition", "Anthropogenic pressure (inv.)"]:
             st.markdown(f"""
             <div style="margin-bottom:10px;">
@@ -723,8 +639,8 @@ if dashboard_mode == "LCAT & GPDP":
         st.markdown('<div class="section-label" style="margin-top: 24px;">Priority actions preview</div>', unsafe_allow_html=True)
         
         if selected_district != "All Districts" and selected_theme != "All":
-            if not filtered_raw_df.empty:
-                display_acts = filtered_raw_df.head(3)
+            if not filtered_df.empty:
+                display_acts = filtered_df.head(3)
                 for _, row in display_acts.iterrows():
                     tier_name = row['Clean_Tier']
                     tier_col = tier_colors.get(tier_name, "var(--line)")
@@ -741,26 +657,21 @@ if dashboard_mode == "LCAT & GPDP":
                     </div>
                     """, unsafe_allow_html=True)
                 
-                if len(filtered_raw_df) > 3:
+                if len(filtered_df) > 3:
                     if st.button("See more actions & community voices"):
-                        show_theme_overlay(selected_theme, selected_state, selected_district, selected_village)
+                        show_theme_overlay(selected_theme, selected_state, selected_district, selected_village, raw_gpdp_df)
             else:
                 st.markdown("<div style='color: var(--ink-soft); font-size: 12.5px;'>No actions match the current filters.</div>", unsafe_allow_html=True)
         else:
             st.markdown("""
             <div style="background: var(--paper-deep); padding: 12px; border-radius: 8px; font-size: 12.5px; color: var(--ink-soft); text-align: center;">
-                Select a <b>District</b> and an <b>LCAT Theme</b> to view specific priority actions and community voices here.
+                Select a <b>District</b> and an <b>LCAT Theme</b> to view specific priority actions and community voices.
             </div>
             """, unsafe_allow_html=True)
 
-        st.markdown('<div class="section-label" style="margin-top: 24px;">Recommended focus</div>', unsafe_allow_html=True)
-        st.markdown("""
-        <div class="focus-pills">
-            <span>NaN</span><span>Recommendations require scores</span>
-        </div>
-        """, unsafe_allow_html=True)
-
-    # --- LOWER ANALYTICS ---
+    # -------------------------------------------------------------------------
+    # LOWER ANALYTICS (Filtered by Geo ONLY, not Theme/Tier)
+    # -------------------------------------------------------------------------
     st.markdown("<hr style='border-color: var(--line); margin: 40px 0;'>", unsafe_allow_html=True)
     
     st.markdown("<h3 style='text-align:center; font-family: Space Grotesk;'>Analytical Summary</h3>", unsafe_allow_html=True)
@@ -768,16 +679,16 @@ if dashboard_mode == "LCAT & GPDP":
     
     col_a1, col_a2 = st.columns([1, 1], gap="large")
     
-    # Analytics Data Prep
-    ana_df = raw_gpdp_df[raw_gpdp_df['State'] == selected_state] if not raw_gpdp_df.empty else pd.DataFrame()
-    if not ana_df.empty:
-        if selected_district != "All Districts": ana_df = ana_df[ana_df['District'] == selected_district]
-        if selected_village != "All Villages": ana_df = ana_df[ana_df['Panchayat/Village'] == selected_village]
+    geo_df = raw_gpdp_df.copy()
+    if not geo_df.empty:
+        if selected_state != "No Data": geo_df = geo_df[geo_df['State'] == selected_state]
+        if selected_district != "All Districts": geo_df = geo_df[geo_df['District'] == selected_district]
+        if selected_block != "All Blocks": geo_df = geo_df[geo_df['Block'] == selected_block]
+        if selected_village != "All Villages": geo_df = geo_df[geo_df['Panchayat/Village'] == selected_village]
     
     with col_a1:
-        # Tiers across Themes
-        if not ana_df.empty:
-            theme_tier_df = ana_df[ana_df['Clean_Tier'] != 'Unknown'].groupby(['Clean_Theme', 'Clean_Tier']).size().reset_index(name='Count')
+        if not geo_df.empty:
+            theme_tier_df = geo_df[geo_df['Clean_Tier'] != 'Unknown'].groupby(['Clean_Theme', 'Clean_Tier']).size().reset_index(name='Count')
             if not theme_tier_df.empty:
                 theme_pivot = theme_tier_df.pivot(index='Clean_Theme', columns='Clean_Tier', values='Count').fillna(0)
                 theme_pivot['Total'] = theme_pivot.sum(axis=1)
@@ -816,16 +727,17 @@ if dashboard_mode == "LCAT & GPDP":
                     if clicked and len(clicked) > 0:
                         curve_idx = clicked[0].get("curveNumber", -1)
                         if 0 <= curve_idx < len(LCAT_ELEMENTS):
-                            show_theme_overlay(LCAT_ELEMENTS[curve_idx], selected_state, selected_district, selected_village)
+                            show_theme_overlay(LCAT_ELEMENTS[curve_idx], selected_state, selected_district, selected_village, raw_gpdp_df)
                 else:
                     st.plotly_chart(fig_theme, use_container_width=True, config={'displayModeBar': False})
             else:
                 st.info("No tier data available for rings.")
+        else:
+            st.info("No data available.")
 
     with col_a2:
-        # Tiers across Pillars
-        if not ana_df.empty and 'Clean_Pillar' in ana_df.columns:
-            pillar_tier_df = ana_df[(ana_df['Clean_Tier'] != 'Unknown') & (ana_df['Clean_Pillar'] != 'Unknown')].groupby(['Clean_Pillar', 'Clean_Tier']).size().reset_index(name='Count')
+        if not geo_df.empty and 'Clean_Pillar' in geo_df.columns:
+            pillar_tier_df = geo_df[(geo_df['Clean_Tier'] != 'Unknown') & (geo_df['Clean_Pillar'] != 'Unknown')].groupby(['Clean_Pillar', 'Clean_Tier']).size().reset_index(name='Count')
             if not pillar_tier_df.empty:
                 pillar_pivot = pillar_tier_df.pivot(index='Clean_Pillar', columns='Clean_Tier', values='Count').fillna(0)
                 pillar_pivot['Total'] = pillar_pivot.sum(axis=1)
@@ -874,7 +786,7 @@ if dashboard_mode == "LCAT & GPDP":
                 if selected_district != "All Districts":
                     filtered_traj = traj_df[traj_df["District"] == selected_district]
                 else:
-                    filtered_traj = traj_df[traj_df["District"].isin(dist_options)] if selected_state != "Unknown" else traj_df.copy()
+                    filtered_traj = traj_df[traj_df["District"].isin(dist_options)] if selected_state != "No Data" else traj_df.copy()
                     
                 if not filtered_traj.empty:
                     valid_themes = [t for t in traj_df.columns if t in LCAT_ELEMENTS]
@@ -885,17 +797,20 @@ if dashboard_mode == "LCAT & GPDP":
                     fig_traj = make_subplots(rows=2, cols=4, specs=[[{'type': 'domain'}] * 4] * 2, subplot_titles=valid_themes, vertical_spacing=0.2)
                     for i, theme in enumerate(valid_themes):
                         r, c = (i // 4) + 1, (i % 4) + 1
-                        counts = filtered_traj[theme].astype(str).str.strip().value_counts().reset_index()
-                        counts.columns = ["Status", "Count"]
-                        colors = [status_colors.get(s, status_colors["Unknown"]) for s in counts["Status"]]
-                        
-                        fig_traj.add_trace(go.Pie(
-                            labels=counts["Status"], values=counts["Count"], hole=0.65,
-                            title={'text': f"<b>{len(filtered_traj)}</b>", 'font': {'size': 14, 'color': '#20281F'}},
-                            marker=dict(colors=colors, line=dict(color='#F4F1E7', width=1.5)),
-                            textinfo='none', hoverinfo='label+value', name=theme, sort=False
-                        ), row=r, col=c)
-                        
+                        if theme in filtered_traj.columns:
+                            counts = filtered_traj[theme].astype(str).str.strip().value_counts().reset_index()
+                            counts.columns = ["Status", "Count"]
+                            colors = [status_colors.get(s, status_colors["Unknown"]) for s in counts["Status"]]
+                            
+                            fig_traj.add_trace(go.Pie(
+                                labels=counts["Status"], values=counts["Count"], hole=0.65,
+                                title={'text': f"<b>{len(filtered_traj)}</b>", 'font': {'size': 14, 'color': '#20281F'}},
+                                marker=dict(colors=colors, line=dict(color='#F4F1E7', width=1.5)),
+                                textinfo='none', hoverinfo='label+value', name=theme, sort=False
+                            ), row=r, col=c)
+                        else:
+                            fig_traj.add_trace(go.Pie(labels=['Unavailable'], values=[1], hole=0.65, title={'text': "0", 'font': {'size': 14, 'color': '#C9C2AC'}}, marker=dict(colors=['#DFDACB']), textinfo='none', hoverinfo='none', sort=False), row=r, col=c)
+
                     fig_traj.update_layout(
                         plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)", font=dict(color="#20281F", size=11, family="IBM Plex Sans"),
                         margin=dict(l=10, r=10, t=30, b=40), height=300, showlegend=True,
@@ -910,16 +825,17 @@ if dashboard_mode == "LCAT & GPDP":
                 else:
                     st.info("No trajectory data available for selection.")
             except Exception:
-                pass
+                st.info("Error reading trajectory file.")
+        else:
+            st.info("Trajectory file not found in data/.")
 
 # -----------------------------------------------------------------------------
-# MAIN APP: CLIMATE SIGNALS MODE (Restyled)
+# CLIMATE SIGNALS DASHBOARD MODE
 # -----------------------------------------------------------------------------
 elif dashboard_mode == "Climate Signals":
     df_climate = load_climate_data()
-    avail_clim_states = df_climate["state"].dropna().unique().tolist() if not df_climate.empty else ["Unknown"]
+    avail_clim_states = df_climate["state"].dropna().unique().tolist() if not df_climate.empty else ["No Data"]
     
-    # --- HEADER ---
     st.markdown("""
     <div class="lcat-header">
       <div class="brand"><b>CLIMATE SIGNALS</b><span>VULNERABILITY & THERMAL STRESS</span></div>
@@ -967,7 +883,6 @@ elif dashboard_mode == "Climate Signals":
                 row = dist_row.iloc[0]
                 
                 k1, k2, k3, k4 = st.columns(4)
-                
                 def render_metric(label, val, desc):
                     return f"""
                     <div style="background: var(--card); border: 1px solid var(--line); border-top: 3px solid var(--ochre); border-radius: 8px; padding: 18px;">
@@ -983,7 +898,6 @@ elif dashboard_mode == "Climate Signals":
                 with k4: st.markdown(render_metric("LST STATUS", f"<span style='font-size:1.1rem;'>{row.get('summer_lst_status', 'N/A')}</span>", "Thermal Stress"), unsafe_allow_html=True)
                 
                 st.markdown("<br><hr style='border-color: var(--line);'>", unsafe_allow_html=True)
-                
                 dist_clean = str(selected_clim_dist).lower().replace(' ', '_')
                 
                 st.markdown("<h3 style='font-family: Space Grotesk;'>Canopy Moisture — NDMI</h3>", unsafe_allow_html=True)
@@ -1037,4 +951,4 @@ elif dashboard_mode == "Climate Signals":
                 """, unsafe_allow_html=True)
             else:
                 st.warning("Data not found for the selected district.")
-
+```eof
