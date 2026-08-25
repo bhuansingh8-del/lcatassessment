@@ -1370,10 +1370,10 @@ if dashboard_mode == "LCAT & GPDP":
     # -------------------------------------------------------------------------
     # THREE-COLUMN CORE WORKSPACE
     # -------------------------------------------------------------------------
-    # THREE-COLUMN CORE WORKSPACE
+    # Modifying layout ratios to strictly make Left/Right thinner and Center wider
+    # Original: [0.84, 1.85, 1.02] -> New: [1.7, 6.1, 2.2]
     # -------------------------------------------------------------------------
-    # -------------------------------------------------------------------------
-    left_col, center_col, right_col = st.columns([0.84, 1.85, 1.02], gap="medium")
+    left_col, center_col, right_col = st.columns([1.7, 6.1, 2.2], gap="medium")
 
     # -------------------------------------------------------------------------
     # LEFT PANEL: layers + filters
@@ -1730,186 +1730,134 @@ if dashboard_mode == "LCAT & GPDP":
             unsafe_allow_html=True,
         )
 
-   
-   # -----------------------------------------------------------------------------
-# DISTRICT TRAJECTORY
-# -----------------------------------------------------------------------------
+    # -----------------------------------------------------------------------------
+    # DISTRICT TRAJECTORY
+    # -----------------------------------------------------------------------------
     st.markdown(
-      """
-       <div class="analytical-heading" style="margin-top:24px;margin-bottom:6px;">
-        <h2>District LCAT Landscape Trajectory</h2>
-        <p>Improving, declining, mixed or stable by LCAT theme</p>
+        """
+        <div class="analytical-heading" style="margin-top:24px;margin-bottom:6px;">
+            <h2>District LCAT Landscape Trajectory</h2>
+            <p>Improving, declining, mixed or stable by LCAT theme</p>
         </div>
         """,
         unsafe_allow_html=True,
-        )
+    )
 
     trajectory_df = load_trajectory_data()
 
     if selected_district == "All Districts":
-      st.info("Select a district to view the trajectory status of all 8 LCAT themes.")
+        st.info("Select a district to view the trajectory status of all 8 LCAT themes.")
 
     elif trajectory_df.empty or "District" not in trajectory_df.columns:
         st.info("No District Wise LCAT trajectory data is available.")
 
     else:
         one = trajectory_df[
-         trajectory_df["District"].astype(str).str.strip() == str(selected_district).strip()
-    ]
+            trajectory_df["District"].astype(str).str.strip() == str(selected_district).strip()
+        ]
 
-    if one.empty:
-        st.info(f"No trajectory data available for {selected_district}.")
+        if one.empty:
+            st.info(f"No trajectory data available for {selected_district}.")
 
-    else:
-        row = one.iloc[0]
+        else:
+            row = one.iloc[0]
 
-        # Visual status system
-        trajectory_style = {
-            "Declining": {
-                "arrow": "↓",
-                "color": "#8C4536",
-                "bg": "#F2E1DC",
-            },
-            "Improving": {
-                "arrow": "↑",
-                "color": "#3E6B47",
-                "bg": "#E2EBDD",
-            },
-            "Stable": {
-                "arrow": "→",
-                "color": "#3E6B78",
-                "bg": "#E2EBED",
-            },
-            "Mixed": {
-                "arrow": "↕",
-                "color": "#B9863E",
-                "bg": "#F1E7D4",
-            },
-            "Unknown": {
-                "arrow": "—",
-                "color": "#6C7568",
-                "bg": "#E5E2D8",
-            },
-        }
+            # Visual status system matched specifically to requested aesthetic
+            trajectory_style = {
+                "Declining": {
+                    "arrow": "↓",
+                    "color": "#8C4536",
+                    "bg": "#F2E1DC",
+                },
+                "Improving": {
+                    "arrow": "↑",
+                    "color": "#3E6B47",
+                    "bg": "#E2EBDD",
+                },
+                "Stable": {
+                    "arrow": "→",
+                    "color": "#3E6B78",
+                    "bg": "#EAE6D9",
+                },
+                "Mixed": {
+                    "arrow": "↕",
+                    "color": "#B9863E",
+                    "bg": "#F8F3E6",
+                },
+                "Unknown": {
+                    "arrow": "—",
+                    "color": "#8A9086",
+                    "bg": "#DFDACB",
+                },
+            }
 
-        # Two compact rows of four themes
-        for start in [0, 4]:
-            theme_cols = st.columns(4)
+            # Render 8 themes strictly mapped into 2 horizontal rows (4 columns each)
+            for start in [0, 4]:
+                theme_cols = st.columns(4)
 
-            for col, theme in zip(theme_cols, LCAT_ELEMENTS[start:start + 4]):
-                with col:
-                    status = normalize_text(row.get(theme, "Unknown"))
+                for col, theme in zip(theme_cols, LCAT_ELEMENTS[start:start + 4]):
+                    with col:
+                        status_raw = normalize_text(row.get(theme, "Unknown"))
+                        
+                        status_key = "Unknown"
+                        for k in trajectory_style.keys():
+                            if k.lower() in status_raw.lower():
+                                status_key = k
+                                break
+                        
+                        style = trajectory_style[status_key]
+                        display_status = status_key if status_key != "Unknown" else "Unknown"
 
-                    if status not in trajectory_style:
-                        status = "Unknown"
-
-                    style = trajectory_style[status]
-
-                    wrapped_theme = "<br>".join(
-                        textwrap.wrap(theme, width=24)
-                    )
-
-                    st.markdown(
-                        f"""
-                        <div style="
-                            background:#F4F1E7;
-                            border:1px solid #C9C2AC;
-                            border-radius:10px;
-                            padding:14px 12px;
-                            min-height:112px;
-                            display:flex;
-                            flex-direction:column;
-                            justify-content:center;
-                            align-items:center;
-                            text-align:center;
-                            margin-bottom:12px;
-                        ">
+                        st.markdown(
+                            f"""
                             <div style="
-                                font-family:'IBM Plex Mono',monospace;
-                                font-size:11px;
-                                line-height:1.35;
-                                color:#4C5646;
-                                min-height:30px;
-                            ">
-                                {wrapped_theme}
-                            </div>
-
-                            <div style="
-                                margin-top:10px;
+                                background:#F4F1E7;
+                                border:1px solid #C9C2AC;
+                                border-radius:8px;
+                                padding:12px 10px;
+                                text-align:center;
                                 display:flex;
+                                flex-direction:column;
                                 align-items:center;
                                 justify-content:center;
-                                gap:7px;
+                                min-height:85px;
+                                margin-bottom:12px;
                             ">
-                                <span style="
-                                    font-family:'Space Grotesk',sans-serif;
-                                    font-size:25px;
-                                    font-weight:700;
-                                    line-height:1;
-                                    color:{style['color']};
+                                <div style="
+                                    font-family:'IBM Plex Mono',monospace;
+                                    font-size:10.5px;
+                                    line-height:1.3;
+                                    color:#4C5646;
+                                    margin-bottom:8px;
+                                    height:28px;
+                                    display:flex;
+                                    align-items:center;
+                                    justify-content:center;
                                 ">
-                                    {style['arrow']}
-                                </span>
+                                    {html.escape(theme)}
+                                </div>
 
-                                <span style="
+                                <div style="
                                     background:{style['bg']};
                                     color:{style['color']};
                                     border-radius:14px;
                                     padding:4px 10px;
                                     font-family:'IBM Plex Mono',monospace;
-                                    font-size:10px;
+                                    font-size:11px;
                                     font-weight:600;
+                                    display:inline-flex;
+                                    align-items:center;
+                                    gap:4px;
                                 ">
-                                    {html.escape(status)}
-                                </span>
+                                    <span style="font-weight:700; font-size:13px;">{style['arrow']}</span>
+                                    {display_status}
+                                </div>
                             </div>
-                        </div>
-                        """,
-                        unsafe_allow_html=True,
-                    )
-
-        # Small legend
-        legend_items = [
-            ("↑", "Improving", "#3E6B47"),
-            ("→", "Stable", "#3E6B78"),
-            ("↕", "Mixed", "#B9863E"),
-            ("↓", "Declining", "#8C4536"),
-        ]
-
-        legend_html = "".join(
-            f"""
-            <span style="
-                display:inline-flex;
-                align-items:center;
-                gap:4px;
-                margin-right:14px;
-            ">
-                <span style="
-                    font-size:15px;
-                    font-weight:700;
-                    color:{color};
-                ">{arrow}</span>
-                <span>{label}</span>
-            </span>
-            """
-            for arrow, label, color in legend_items
-        )
-
-        st.markdown(
-            f"""
-            <div style="
-                text-align:center;
-                margin-top:2px;
-                margin-bottom:8px;
-                color:#4C5646;
-                font-family:'IBM Plex Mono',monospace;
-                font-size:10px;
-            ">
-                {legend_html}
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+                            """,
+                            unsafe_allow_html=True,
+                        )
+            # Subtle spacer below trajectory section
+            st.markdown("<div style='margin-bottom: 24px;'></div>", unsafe_allow_html=True)
 
 # =============================================================================
 # 12. CLIMATE SIGNALS MODE
