@@ -1809,51 +1809,55 @@ if dashboard_mode == "LCAT & GPDP":
                         display_status = status_key if status_key != "Unknown" else "Unknown"
 
                         st.markdown(
-                            f"""
-                            <div style="
-                                background:#F4F1E7;
-                                border:1px solid #C9C2AC;
-                                border-radius:8px;
-                                padding:12px 10px;
-                                text-align:center;
-                                display:flex;
-                                flex-direction:column;
-                                align-items:center;
-                                justify-content:center;
-                                min-height:85px;
-                                margin-bottom:12px;
-                            ">
+                            textwrap.dedent(
+                                f"""
                                 <div style="
-                                    font-family:'IBM Plex Mono',monospace;
-                                    font-size:10.5px;
-                                    line-height:1.3;
-                                    color:#4C5646;
-                                    margin-bottom:8px;
-                                    height:28px;
+                                    background:#F4F1E7;
+                                    border:1px solid #C9C2AC;
+                                    border-radius:8px;
+                                    padding:12px 10px;
+                                    text-align:center;
                                     display:flex;
+                                    flex-direction:column;
                                     align-items:center;
                                     justify-content:center;
+                                    min-height:85px;
+                                    margin-bottom:12px;
                                 ">
-                                    {html.escape(theme)}
-                                </div>
+                                    <div style="
+                                        font-family:'IBM Plex Mono',monospace;
+                                        font-size:10.5px;
+                                        line-height:1.3;
+                                        color:#4C5646;
+                                        margin-bottom:8px;
+                                        min-height:28px;
+                                        display:flex;
+                                        align-items:center;
+                                        justify-content:center;
+                                    ">
+                                        {html.escape(theme)}
+                                    </div>
 
-                                <div style="
-                                    background:{style['bg']};
-                                    color:{style['color']};
-                                    border-radius:14px;
-                                    padding:4px 10px;
-                                    font-family:'IBM Plex Mono',monospace;
-                                    font-size:11px;
-                                    font-weight:600;
-                                    display:inline-flex;
-                                    align-items:center;
-                                    gap:4px;
-                                ">
-                                    <span style="font-weight:700; font-size:13px;">{style['arrow']}</span>
-                                    {display_status}
+                                    <div style="
+                                        background:{style['bg']};
+                                        color:{style['color']};
+                                        border-radius:14px;
+                                        padding:4px 10px;
+                                        font-family:'IBM Plex Mono',monospace;
+                                        font-size:11px;
+                                        font-weight:600;
+                                        display:inline-flex;
+                                        align-items:center;
+                                        gap:4px;
+                                    ">
+                                        <span style="font-weight:700;font-size:13px;">
+                                            {style['arrow']}
+                                        </span>
+                                        {html.escape(display_status)}
+                                    </div>
                                 </div>
-                            </div>
-                            """,
+                                """
+                            ),
                             unsafe_allow_html=True,
                         )
             # Subtle spacer below trajectory section
