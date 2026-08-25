@@ -1,203 +1,58 @@
 import streamlit as st
 import folium
 from streamlit_folium import st_folium
-import plotly.express as px
 import plotly.graph_objects as go
 import pandas as pd
 import numpy as np
 import os
-import glob
 import re
-from typing import Any
+import html
+from typing import Any, Dict, List, Optional
 from plotly.subplots import make_subplots
 import textwrap
 
-# Try to load streamlit-plotly-events for native click interaction
+# Optional Plotly click-event component. The dashboard remains usable if it is absent.
 try:
     from streamlit_plotly_events import plotly_events
     HAS_PLOTLY_EVENTS = True
 except ImportError:
     HAS_PLOTLY_EVENTS = False
 
-# -----------------------------------------------------------------------------
-# 1. PAGE CONFIGURATION & CUSTOM CSS 
-# -----------------------------------------------------------------------------
+
+# =============================================================================
+# 1. PAGE CONFIGURATION + HTML-REFERENCE DESIGN SYSTEM
+# =============================================================================
 st.set_page_config(
     page_title="LCAT — Landscape Character Assessment Tool",
-    page_icon="🌿",
+    page_icon="",
     layout="wide",
     initial_sidebar_state="collapsed",
 )
 
-st.markdown("""
-<style>
-    @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
-    
-    :root {
-        --paper: #EAE6D9;
-        --paper-deep: #DFDACB;
-        --ink: #20281F;
-        --ink-soft: #4C5646;
-        --line: #C9C2AC;
-        --pine: #243D2C;
-        --pine-2: #345040;
-        --moss: #6C7C55;
-        --ochre: #B9863E;
-        --brick: #8C4536;
-        --sage: #7E9767;
-        --deepsage: #3E6B47;
-        --slate: #3E6B78;
-        --card: #F4F1E7;
-        --white: #FCFBF6;
-    }
-    
-    /* Global Theme */
-    .stApp {
-        background-color: var(--paper);
-        color: var(--ink);
-        font-family: 'IBM Plex Sans', sans-serif;
-    }
-    
-    /* Hide Default Header */
-    header[data-testid="stHeader"] {
-        display: none;
-    }
-    
-    /* Typography Overrides */
-    h1, h2, h3, h4, h5, h6, .display {
-        font-family: 'Space Grotesk', sans-serif !important;
-        color: var(--ink);
-    }
-    .mono {
-        font-family: 'IBM Plex Mono', monospace !important;
-    }
-    
-    /* Streamlit Widget Overrides */
-    [data-testid="stMarkdownContainer"] p, 
-    .stSelectbox label, .stToggle label, .stRadio label {
-        color: var(--ink) !important;
-        font-family: 'IBM Plex Sans', sans-serif;
-    }
-    
-    /* Selectboxes / Inputs */
-    div[data-baseweb="select"] > div, input {
-        background-color: var(--white) !important;
-        color: var(--ink) !important;
-        border: 1px solid var(--line) !important;
-        border-radius: 6px;
-    }
-    ul[data-baseweb="menu"] {
-        background-color: var(--white) !important;
-        border: 1px solid var(--line);
-    }
-    li[data-baseweb="option"] {
-        color: var(--ink) !important;
-    }
-    li[data-baseweb="option"]:hover {
-        background-color: var(--paper-deep) !important;
-    }
-    
-    /* Top Header Bar */
-    .lcat-header {
-        background: var(--pine);
-        color: var(--white);
-        padding: 14px 24px;
-        display: flex;
-        align-items: center;
-        gap: 20px;
-        border-bottom: 3px solid var(--ochre);
-        margin-top: -60px; 
-        margin-bottom: 0px;
-        margin-left: -5rem;
-        margin-right: -5rem;
-    }
-    .brandmark { width: 34px; height: 34px; flex: none; }
-    .brand { display: flex; flex-direction: column; line-height: 1.1; margin-right: 12px; }
-    .brand b { font-family: 'Space Grotesk', sans-serif; font-size: 19px; letter-spacing: 0.5px; }
-    .brand span { font-size: 11px; color: #C9D3C2; letter-spacing: 0.4px; }
-    
-    /* Breadcrumb */
-    .breadcrumb {
-        background: var(--pine-2); color: #DCE4D4; font-size: 12.5px; padding: 8px 24px;
-        font-family: 'IBM Plex Mono', monospace; display: flex; align-items: center; gap: 6px;
-        margin-left: -5rem; margin-right: -5rem; margin-bottom: 24px;
-    }
-    .breadcrumb .sep { opacity: 0.5; }
-    .breadcrumb .current { color: var(--ochre); font-weight: 600; }
+COLORS = {
+    "paper": "#EAE6D9",
+    "paper_deep": "#DFDACB",
+    "ink": "#20281F",
+    "ink_soft": "#4C5646",
+    "line": "#C9C2AC",
+    "pine": "#243D2C",
+    "pine_2": "#345040",
+    "moss": "#6C7C55",
+    "ochre": "#B9863E",
+    "brick": "#8C4536",
+    "sage": "#7E9767",
+    "deepsage": "#3E6B47",
+    "slate": "#3E6B78",
+    "card": "#F4F1E7",
+    "white": "#FCFBF6",
+}
 
-    /* Left Panel Styles */
-    .section-label {
-        font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; letter-spacing: 1.2px; text-transform: uppercase;
-        color: var(--ink-soft); margin: 18px 0 10px;
-    }
-    .layer-toggle {
-        display: flex; align-items: center; justify-content: space-between; padding: 7px 2px; font-size: 13.5px; color: var(--ink);
-    }
+TIER_COLORS = {
+    "Tier 1 — Community Led": "#d97706",
+    "Tier 2 — Minor Support": "#712416",
+    "Tier 3 — External Support & Convergence": "#0ea5e9",
+}
 
-    /* Center & Right Cards */
-    .html-card {
-        background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px;
-    }
-    
-    /* Block Summary */
-    .block-summary { margin-top: 16px; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; }
-    .block-summary h3 { font-family: 'Space Grotesk', sans-serif; font-size: 13.5px; margin: 0 0 12px; display: flex; justify-content: space-between; color: var(--ink); }
-    .block-summary h3 .n { color: var(--ink-soft); font-family: 'IBM Plex Mono', monospace; font-weight: 400; font-size: 11.5px; }
-    .dist-bar { display: flex; height: 20px; border-radius: 5px; overflow: hidden; margin-bottom: 8px; }
-    .dist-bar div { height: 100%; }
-    .tier-counts { display: flex; gap: 22px; margin-top: 14px;}
-    .tier-counts div { display: flex; flex-direction: column; }
-    .tier-counts b { font-family: 'IBM Plex Mono', monospace; font-size: 18px; color: var(--pine); }
-    .tier-counts span { font-size: 10.5px; color: var(--ink-soft); }
-
-    /* Profile Panel */
-    .profile-header h2 { font-family: 'Space Grotesk', sans-serif; font-size: 19px; margin: 0 0 2px; }
-    .profile-header .loc { font-size: 12px; color: var(--ink-soft); font-family: 'IBM Plex Sans'; margin-bottom: 14px;}
-    
-    .score-block {
-        display: flex; align-items: center; gap: 16px; background: var(--card); border: 1px solid var(--line);
-        border-radius: 10px; padding: 14px 16px; margin-bottom: 14px;
-    }
-    .score-block .txt b { display: block; font-family: 'Space Grotesk', sans-serif; font-size: 14px; }
-    .score-block .txt .cls {
-        display: inline-block; margin-top: 4px; font-size: 11px; font-family: 'IBM Plex Mono', monospace;
-        padding: 2px 8px; border-radius: 10px; background: var(--line); color: var(--ink); font-weight: 600;
-    }
-    
-    .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 14px; margin-top: 12px; }
-    .stat-grid div { display: flex; flex-direction: column; }
-    .stat-grid b { font-family: 'IBM Plex Mono', monospace; font-size: 14px; color: var(--ink); }
-    .stat-grid span { font-size: 10.5px; color: var(--ink-soft); }
-
-    /* Action items */
-    .action-item {
-        border-left: 3px solid var(--ochre); background: var(--card); border-radius: 0 8px 8px 0;
-        padding: 10px 12px; margin-bottom: 8px; border-top: 1px solid var(--line); border-right: 1px solid var(--line); border-bottom: 1px solid var(--line);
-    }
-    .action-item .atxt { font-size: 13px; margin-bottom: 6px; line-height: 1.35; color: var(--ink); }
-    .tag-row { display: flex; gap: 5px; flex-wrap: wrap; }
-    .tag {
-        font-size: 9.5px; font-family: 'IBM Plex Mono', monospace; padding: 2px 7px; border-radius: 9px;
-        background: var(--paper-deep); color: var(--ink-soft);
-    }
-    
-    .focus-pills { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
-    .focus-pills span {
-        font-size: 11px; padding: 5px 10px; border-radius: 14px; background: var(--line); color: var(--ink);
-        font-family: 'IBM Plex Mono', monospace;
-    }
-    
-    .stButton>button {
-        background-color: var(--paper-deep); color: var(--ink); border: 1px solid var(--line);
-        font-family: 'IBM Plex Mono', monospace; font-size: 12px; width: 100%; border-radius: 6px;
-    }
-    .stButton>button:hover { background-color: var(--line); color: var(--ink); border-color: var(--pine); }
-</style>
-""", unsafe_allow_html=True)
-
-# -----------------------------------------------------------------------------
-# 2. CONSTANTS & SEED MAPPINGS
-# -----------------------------------------------------------------------------
 LCAT_ELEMENTS = [
     "Landform and topography",
     "Hydrology",
@@ -206,749 +61,2258 @@ LCAT_ELEMENTS = [
     "Visual and Sensory qualities",
     "Wildlife and Biodiversity richness",
     "Infrastructure and Economic factors",
-    "Community and Governance"
+    "Community and Governance",
 ]
 
-def normalize_theme(x: Any) -> str:
-    if pd.isna(x): return "Unknown"
-    v = str(x).strip()
-    v = re.sub(r'^[\d]+\s*[\)\.]?\s*', '', v).strip()
-    v_lower = v.lower()
-    for valid in LCAT_ELEMENTS:
-        if valid.lower() in v_lower:
-            return valid
+PILLARS = ["Adaptation", "Mitigation", "Restoration"]
+
+STATUS_COLORS = {
+    "Declining": "#8C4536",
+    "Mixed": "#B9863E",
+    "Stable": "#3E6B78",
+    "Improving": "#3E6B47",
+    "Unknown": "#DFDACB",
+}
+
+# The current application is intended for light mode only.
+st.markdown(
+    f"""
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+:root {{
+    --paper:{COLORS["paper"]};
+    --paper-deep:{COLORS["paper_deep"]};
+    --ink:{COLORS["ink"]};
+    --ink-soft:{COLORS["ink_soft"]};
+    --line:{COLORS["line"]};
+    --pine:{COLORS["pine"]};
+    --pine-2:{COLORS["pine_2"]};
+    --moss:{COLORS["moss"]};
+    --ochre:{COLORS["ochre"]};
+    --brick:{COLORS["brick"]};
+    --sage:{COLORS["sage"]};
+    --deepsage:{COLORS["deepsage"]};
+    --slate:{COLORS["slate"]};
+    --card:{COLORS["card"]};
+    --white:{COLORS["white"]};
+}}
+
+.stApp {{
+    background: var(--paper);
+    color: var(--ink);
+    font-family: 'IBM Plex Sans', sans-serif;
+}}
+
+[data-testid="stSidebar"] {{
+    display: none;
+}}
+
+section[data-testid="stSidebar"] {{
+    display: none;
+}}
+
+.block-container {{
+    max-width: 100%;
+    padding: 0 24px 48px 24px;
+}}
+
+h1, h2, h3, h4, h5 {{
+    font-family: 'Space Grotesk', sans-serif !important;
+    color: var(--ink) !important;
+}}
+
+p, label, span, div {{
+    font-family: 'IBM Plex Sans', sans-serif;
+}}
+
+.lcat-header {{
+    background: var(--pine);
+    color: var(--white);
+    margin: 0 -24px;
+    padding: 14px 24px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    border-bottom: 3px solid var(--ochre);
+}}
+
+.lcat-brandmark {{
+    width: 34px;
+    height: 34px;
+    flex: none;
+}}
+
+.lcat-brand {{
+    display: flex;
+    flex-direction: column;
+    line-height: 1.08;
+}}
+
+.lcat-brand strong {{
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 19px;
+    letter-spacing: .5px;
+}}
+
+.lcat-brand small {{
+    font-family: 'IBM Plex Sans', sans-serif;
+    font-size: 10px;
+    color: #C9D3C2;
+    letter-spacing: .35px;
+}}
+
+.mode-bar {{
+    margin: 10px 0 0 0;
+    padding: 5px 8px;
+    border: 1px solid var(--line);
+    background: rgba(252,251,246,.6);
+    border-radius: 7px;
+}}
+
+.breadcrumb {{
+    margin: 0 -24px;
+    padding: 8px 24px;
+    background: var(--pine-2);
+    color: #DCE4D4;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    overflow-x: auto;
+    white-space: nowrap;
+}}
+
+.breadcrumb .sep {{ opacity: .5; }}
+.breadcrumb .current {{ color: var(--ochre); font-weight: 600; }}
+
+.section-label {{
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10.5px;
+    letter-spacing: 1.15px;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+    margin: 18px 0 9px;
+}}
+
+.subtle-note {{
+    color: var(--ink-soft);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10.5px;
+    line-height: 1.45;
+}}
+
+.card {{
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 15px 16px;
+}}
+
+.map-title {{
+    display:flex;
+    justify-content:space-between;
+    align-items:baseline;
+    gap:12px;
+    margin-bottom:10px;
+}}
+
+.map-title h2 {{
+    font-size:15px !important;
+    margin:0 !important;
+}}
+
+.map-title span {{
+    color:var(--ink-soft);
+    font-family:'IBM Plex Mono', monospace;
+    font-size:10.5px;
+}}
+
+.profile-title {{
+    margin:0;
+    font-size:20px !important;
+}}
+
+.profile-location {{
+    margin-top:2px;
+    color:var(--ink-soft);
+    font-size:11.5px;
+}}
+
+.score-card {{
+    display:flex;
+    align-items:center;
+    gap:14px;
+    background:var(--card);
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:13px 14px;
+    margin-top:12px;
+}}
+
+.score-gauge {{
+    width:68px;
+    height:68px;
+    border-radius:50%;
+    border:8px solid var(--paper-deep);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    flex:none;
+    background:var(--white);
+}}
+
+.score-gauge span {{
+    font-family:'IBM Plex Mono', monospace;
+    font-weight:600;
+    color:var(--pine);
+    font-size:15px;
+}}
+
+.score-copy strong {{
+    display:block;
+    font-family:'Space Grotesk', sans-serif;
+    font-size:14px;
+}}
+
+.score-copy small {{
+    display:inline-block;
+    margin-top:4px;
+    padding:2px 7px;
+    border-radius:10px;
+    background:var(--paper-deep);
+    color:var(--ink-soft);
+    font-family:'IBM Plex Mono', monospace;
+    font-size:10px;
+}}
+
+.subscore {{
+    margin: 0 0 10px;
+}}
+
+.subscore-head {{
+    display:flex;
+    justify-content:space-between;
+    gap:8px;
+    font-size:11.5px;
+    margin-bottom:4px;
+}}
+
+.subscore-head b {{
+    font-family:'IBM Plex Mono', monospace;
+}}
+
+.subscore-track {{
+    height:7px;
+    background:var(--paper-deep);
+    border-radius:4px;
+    overflow:hidden;
+}}
+
+.stat-grid {{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:10px 16px;
+}}
+
+.stat-grid .value {{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:14px;
+    color:var(--ink);
+}}
+
+.stat-grid .label {{
+    font-size:10px;
+    color:var(--ink-soft);
+    margin-top:2px;
+}}
+
+.summary-title {{
+    display:flex;
+    justify-content:space-between;
+    align-items:baseline;
+    gap:10px;
+}}
+
+.summary-title h3 {{
+    font-size:14px !important;
+    margin:0 !important;
+}}
+
+.summary-title span {{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:10.5px;
+    color:var(--ink-soft);
+}}
+
+.tier-bar {{
+    display:flex;
+    height:19px;
+    border-radius:5px;
+    overflow:hidden;
+    margin:12px 0 8px;
+    background:var(--paper-deep);
+}}
+
+.tier-legend {{
+    display:flex;
+    gap:12px;
+    flex-wrap:wrap;
+    font-family:'IBM Plex Mono', monospace;
+    font-size:9.8px;
+    color:var(--ink-soft);
+}}
+
+.tier-legend span {{
+    display:inline-flex;
+    align-items:center;
+    gap:4px;
+}}
+
+.legend-dot {{
+    width:8px;
+    height:8px;
+    border-radius:2px;
+    display:inline-block;
+}}
+
+.tier-counts {{
+    display:flex;
+    gap:26px;
+    margin-top:13px;
+}}
+
+.tier-counts > div {{
+    display:flex;
+    flex-direction:column;
+}}
+
+.tier-counts .num {{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:18px;
+    color:var(--pine);
+}}
+
+.tier-counts .label {{
+    font-size:10px;
+    color:var(--ink-soft);
+}}
+
+.action-preview {{
+    border-left:3px solid var(--ochre);
+    background:var(--card);
+    border-radius:0 8px 8px 0;
+    padding:10px 11px;
+    margin-bottom:8px;
+}}
+
+.action-preview.t2 {{ border-left-color:var(--brick); }}
+.action-preview.t3 {{ border-left-color:#0ea5e9; }}
+
+.action-preview .text {{
+    font-size:12px;
+    line-height:1.36;
+    margin-bottom:6px;
+}}
+
+.tag-row {{
+    display:flex;
+    flex-wrap:wrap;
+    gap:4px;
+}}
+
+.tag {{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:9px;
+    padding:2px 6px;
+    border-radius:9px;
+    background:var(--paper-deep);
+    color:var(--ink-soft);
+}}
+
+.tag.t1 {{ background:#d97706; color:#241505; font-weight:600; }}
+.tag.t2 {{ background:#712416; color:#fff; font-weight:600; }}
+.tag.t3 {{ background:#0ea5e9; color:#06263b; font-weight:600; }}
+
+.focus-pill {{
+    display:inline-block;
+    font-family:'IBM Plex Mono', monospace;
+    font-size:10px;
+    padding:5px 9px;
+    border-radius:14px;
+    background:var(--pine);
+    color:var(--white);
+    margin:3px 4px 0 0;
+}}
+
+.focus-pill.muted {{
+    background:var(--paper-deep);
+    color:var(--ink-soft);
+}}
+
+.analytical-heading {{
+    text-align:center;
+    margin: 30px 0 18px;
+}}
+
+.analytical-heading h2 {{
+    margin:0 !important;
+    font-size:25px !important;
+}}
+
+.analytical-heading p {{
+    margin:4px 0 0;
+    color:var(--ink-soft);
+    font-size:12px;
+}}
+
+.chart-card {{
+    background:var(--white);
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:15px 10px 12px;
+}}
+
+.chart-title {{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:10.5px;
+    letter-spacing:.4px;
+    color:var(--ink-soft);
+    text-align:center;
+    margin-bottom:5px;
+}}
+
+.theme-label {{
+    text-align:center;
+    color:var(--ink-soft);
+    font-family:'IBM Plex Mono', monospace;
+    font-size:9.4px;
+    line-height:1.25;
+    min-height:34px;
+    margin-top:-1px;
+}}
+
+.trajectory-card {{
+    background:var(--card);
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:14px 10px 11px;
+}}
+
+.trajectory-status {{
+    display:inline-block;
+    font-family:'IBM Plex Mono', monospace;
+    font-size:9px;
+    padding:3px 7px;
+    border-radius:10px;
+    margin-top:4px;
+}}
+
+.quote-card {{
+    background:var(--card);
+    border-left:4px solid var(--brick);
+    border-radius:0 8px 8px 0;
+    padding:13px 14px;
+    margin-bottom:12px;
+}}
+
+.quote-card .quote {{
+    font-size:15px;
+    font-style:italic;
+    color:var(--ink);
+    line-height:1.45;
+    margin-bottom:8px;
+}}
+
+.quote-card .speaker {{
+    font-size:11px;
+    font-weight:600;
+    color:var(--ink-soft);
+}}
+
+.modal-hint {{
+    color:var(--ink-soft);
+    font-size:11px;
+    margin: -2px 0 12px;
+}}
+
+div[data-baseweb="select"] > div {{
+    background:var(--white) !important;
+    color:var(--ink) !important;
+    border:1px solid var(--line) !important;
+    border-radius:7px !important;
+}}
+
+div[data-baseweb="select"] input {{
+    color:var(--ink) !important;
+}}
+
+[data-testid="stRadio"] > div {{
+    gap: 5px;
+}}
+
+[data-testid="stRadio"] label {{
+    color: var(--ink) !important;
+}}
+
+button[kind="secondary"] {{
+    border-color:var(--line) !important;
+    color:var(--ink-soft) !important;
+    background:var(--white) !important;
+}}
+
+button[kind="secondary"]:hover {{
+    border-color:var(--pine) !important;
+    color:var(--pine) !important;
+}}
+
+.stButton button {{
+    font-family:'IBM Plex Mono', monospace !important;
+    font-size:10px !important;
+    border-radius:14px !important;
+}}
+
+div[data-testid="stExpander"] {{
+    border:1px solid var(--line);
+    border-radius:8px;
+    background:rgba(252,251,246,.45);
+}}
+
+footer {{
+    visibility:hidden;
+}}
+
+@media (max-width: 1100px) {{
+    .block-container {{ padding-left:14px; padding-right:14px; }}
+    .lcat-header {{ margin-left:-14px; margin-right:-14px; }}
+    .breadcrumb {{ margin-left:-14px; margin-right:-14px; }}
+}}
+</style>
+""",
+    unsafe_allow_html=True,
+)
+
+
+# =============================================================================
+# 2. DATA / NORMALIZATION HELPERS
+# =============================================================================
+LCAT_ALIASES = {
+    "landform & topography": "Landform and topography",
+    "landform and topography": "Landform and topography",
+    "hydrology": "Hydrology",
+    "land cover & agriculture": "Land cover and Agriculture",
+    "land cover and agriculture": "Land cover and Agriculture",
+    "cultural & historical features": "Cultural and historical features",
+    "cultural and historical features": "Cultural and historical features",
+    "visual & sensory qualities": "Visual and Sensory qualities",
+    "visual and sensory qualities": "Visual and Sensory qualities",
+    "wildlife & biodiversity": "Wildlife and Biodiversity richness",
+    "wildlife and biodiversity": "Wildlife and Biodiversity richness",
+    "wildlife and biodiversity richness": "Wildlife and Biodiversity richness",
+    "infrastructure & economy": "Infrastructure and Economic factors",
+    "infrastructure and economy": "Infrastructure and Economic factors",
+    "infrastructure & economic factors": "Infrastructure and Economic factors",
+    "infrastructure and economic factors": "Infrastructure and Economic factors",
+    "community & governance": "Community and Governance",
+    "community and governance": "Community and Governance",
+}
+
+
+def normalize_text(value: Any) -> str:
+    if pd.isna(value):
+        return ""
+    return str(value).strip()
+
+
+def normalize_theme(value: Any) -> str:
+    if pd.isna(value):
+        return "Unknown"
+
+    v = str(value).strip()
+    v = re.sub(r"^\s*\d+\s*[\)\.\-:]\s*", "", v)
+    v = re.sub(r"\s+", " ", v).strip()
+    key = v.lower().replace("–", "-").replace("—", "-")
+
+    if key in LCAT_ALIASES:
+        return LCAT_ALIASES[key]
+
+    for alias, canonical in LCAT_ALIASES.items():
+        if alias in key or key in alias:
+            return canonical
+
+    return v if v in LCAT_ELEMENTS else "Unknown"
+
+
+def normalize_tier(value: Any) -> str:
+    s = normalize_text(value).lower()
+    if "tier 1" in s:
+        return "Tier 1 — Community Led"
+    if "tier 2" in s:
+        return "Tier 2 — Minor Support"
+    if "tier 3" in s:
+        return "Tier 3 — External Support & Convergence"
     return "Unknown"
 
-ELEMENT_COLORS = {
-    "Landform and topography": "#D89A2B", "Hydrology": "#0284c7", 
-    "Land cover and Agriculture": "#16a34a", "Cultural and historical features": "#db2777",
-    "Visual and Sensory qualities": "#7c3aed", "Wildlife and Biodiversity richness": "#ea580c",
-    "Infrastructure and Economic factors": "#64748b", "Community and Governance": "#ca8a04",
-    "Unknown": "#cbd5e1"
-}
 
-tier_colors = {
-    "Tier 1 — Community Led": "#d97706",
-    "Tier 2 — Minor Support": "#712416",
-    "Tier 3 — External Support & Convergence": "#0ea5e9"
-}
+def normalize_pillar(value: Any) -> str:
+    s = normalize_text(value).lower()
+    for pillar in PILLARS:
+        if pillar.lower() == s:
+            return pillar
+    return "Unknown"
 
-DISTRICT_CENTERS = {
-    "Bastar": {"lat": 19.35, "lng": 81.80}, "Kanker": {"lat": 20.27, "lng": 81.49},
-    "Dhamtari": {"lat": 20.70, "lng": 81.55}, "Kondagaon": {"lat": 19.60, "lng": 81.66},
-    "Aligarh": {"lat": 27.89, "lng": 78.08}, "Banda": {"lat": 25.48, "lng": 80.33},
-    "Jhabua": {"lat": 22.76, "lng": 74.59}, "Sehore": {"lat": 23.20, "lng": 77.08},
-    "Prayagraj": {"lat": 25.43, "lng": 81.84}, "Dhar": {"lat": 22.59, "lng": 75.30}
-}
 
-# -----------------------------------------------------------------------------
-# 3. DATA LOADING (Real files only)
-# -----------------------------------------------------------------------------
-@st.cache_data
-def get_raw_gpdp_data() -> pd.DataFrame:
-    """Loads all GPDP data in raw format, parsing all sheets strictly from files."""
-    data_dir = "data"
-    df_list = []
-    
-    if os.path.exists(data_dir):
-        all_files = glob.glob(os.path.join(data_dir, "*.xlsx")) + glob.glob(os.path.join(data_dir, "*.csv"))
-        gpdp_files = [f for f in all_files if "GPDP" in os.path.basename(f).upper() or "GPDP" in os.path.basename(f)]
-        
-        for f in gpdp_files:
-            try:
-                if f.endswith('.csv'):
-                    df_list.append(pd.read_csv(f))
-                else:
-                    dfs = pd.read_excel(f, sheet_name=None)
-                    df_list.extend(dfs.values())
-            except Exception:
-                pass
-                
-    if df_list:
-        raw_df = pd.concat(df_list, ignore_index=True)
-        # Normalize core dimensions
-        raw_df['Clean_Theme'] = raw_df.get('Theme', pd.Series(dtype=str)).apply(normalize_theme)
-        
-        if 'Tier' in raw_df.columns:
-            raw_df['Clean_Tier'] = raw_df['Tier'].astype(str).apply(
-                lambda x: 'Tier 1 — Community Led' if 'Tier 1' in x else (
-                    'Tier 2 — Minor Support' if 'Tier 2' in x else (
-                    'Tier 3 — External Support & Convergence' if 'Tier 3' in x else 'Unknown'
-                ))
+def find_column(df: pd.DataFrame, candidates: List[str]) -> Optional[str]:
+    lowered = {str(c).strip().lower(): c for c in df.columns}
+    for candidate in candidates:
+        if candidate.lower() in lowered:
+            return lowered[candidate.lower()]
+    for c in df.columns:
+        lc = str(c).strip().lower()
+        if any(candidate.lower() in lc for candidate in candidates):
+            return c
+    return None
+
+
+# =============================================================================
+# 3. REAL GPDP DATA
+# =============================================================================
+@st.cache_data(show_spinner=False)
+def load_gpdp_data() -> pd.DataFrame:
+    workbook = "data/GPDP_Action_Plans_Themed_v2_Pillars.xlsx"
+
+    if os.path.exists(workbook):
+        frames = []
+        try:
+            sheets = pd.read_excel(workbook, sheet_name=None)
+        except Exception as exc:
+            st.error(f"Could not read GPDP workbook: {exc}")
+            return pd.DataFrame()
+
+        for sheet_name, frame in sheets.items():
+            if frame is None or frame.empty:
+                continue
+
+            frame = frame.copy()
+            frame.columns = [str(c).strip() for c in frame.columns]
+
+            # If State is absent but the worksheet itself is a state sheet,
+            # use the worksheet name only as a geographic fallback.
+            if "State" not in frame.columns:
+                frame["State"] = sheet_name
+
+            frames.append(frame)
+
+        if frames:
+            df = pd.concat(frames, ignore_index=True)
+
+            for col in ["State", "District", "Block", "Panchayat/Village",
+                        "Theme", "Priority Action", "Tier", "Pillars", "Pillar"]:
+                if col in df.columns:
+                    df[col] = df[col].apply(normalize_text)
+
+            if "Theme" in df.columns:
+                df["Clean_Theme"] = df["Theme"].apply(normalize_theme)
+            else:
+                df["Clean_Theme"] = "Unknown"
+
+            if "Tier" in df.columns:
+                df["Clean_Tier"] = df["Tier"].apply(normalize_tier)
+            else:
+                df["Clean_Tier"] = "Unknown"
+
+            pillar_col = "Pillars" if "Pillars" in df.columns else (
+                "Pillar" if "Pillar" in df.columns else None
             )
-        else:
-            raw_df['Clean_Tier'] = 'Unknown'
-            
-        pillar_col = 'Pillars' if 'Pillars' in raw_df.columns else ('Pillar' if 'Pillar' in raw_df.columns else None)
-        raw_df['Clean_Pillar'] = raw_df[pillar_col].astype(str).fillna('Unknown') if pillar_col else 'Unknown'
-        
-        # Ensure geographic columns exist
-        for col in ['State', 'District', 'Block', 'Panchayat/Village']:
-            if col not in raw_df.columns:
-                raw_df[col] = "Unknown"
-        return raw_df
-        
+            if pillar_col:
+                df["Clean_Pillar"] = df[pillar_col].apply(normalize_pillar)
+            else:
+                df["Clean_Pillar"] = "Unknown"
+
+            return df
+
+    st.warning(
+        "GPDP_Action_Plans_Themed_v2_Pillars.xlsx was not found in data/. "
+        "No demo/fallback data are being used."
+    )
     return pd.DataFrame()
 
-@st.cache_data
+
+@st.cache_data(show_spinner=False)
+def build_village_summary(df: pd.DataFrame) -> pd.DataFrame:
+    required = ["State", "District", "Block", "Panchayat/Village"]
+    if df.empty or any(c not in df.columns for c in required):
+        return pd.DataFrame()
+
+    rows = []
+    grouped = df.groupby(required, dropna=False)
+
+    for (state, district, block, village), group in grouped:
+        if not str(village).strip():
+            continue
+
+        rows.append(
+            {
+                "state": state,
+                "district": district,
+                "block": block,
+                "name": village,
+                "totalDemand": int(len(group)),
+                "tier1": int((group["Clean_Tier"] == "Tier 1 — Community Led").sum()),
+                "tier2": int((group["Clean_Tier"] == "Tier 2 — Minor Support").sum()),
+                "tier3": int((group["Clean_Tier"] == "Tier 3 — External Support & Convergence").sum()),
+                "dominantElement": (
+                    group.loc[group["Clean_Theme"] != "Unknown", "Clean_Theme"].mode().iloc[0]
+                    if not group.loc[group["Clean_Theme"] != "Unknown", "Clean_Theme"].mode().empty
+                    else "Unknown"
+                ),
+            }
+        )
+
+    result = pd.DataFrame(rows)
+
+    # The existing project does not contain a village geometry dataset in this
+    # application, so keep the current deterministic visual marker fallback.
+    # This does NOT alter the underlying counts/data.
+    if not result.empty:
+        rng = np.random.default_rng(42)
+        district_centers = DISTRICT_CENTERS
+        latitudes = []
+        longitudes = []
+        for _, row in result.iterrows():
+            center = district_centers.get(
+                row["district"], {"lat": 21.0, "lng": 81.0}
+            )
+            latitudes.append(center["lat"] + rng.uniform(-0.15, 0.15))
+            longitudes.append(center["lng"] + rng.uniform(-0.15, 0.15))
+        result["lat"] = latitudes
+        result["lng"] = longitudes
+
+    return result
+
+
+# Same geographic centre information used by the existing application.
+DISTRICT_CENTERS = {
+    "Bastar": {"lat": 19.35, "lng": 81.80, "bounds": [[18.90, 81.55], [19.75, 82.50]]},
+    "Kanker": {"lat": 20.27, "lng": 81.49, "bounds": [[19.90, 80.95], [20.75, 81.95]]},
+    "Dhamtari": {"lat": 20.70, "lng": 81.55, "bounds": [[20.40, 81.20], [21.05, 81.90]]},
+    "Kondagaon": {"lat": 19.60, "lng": 81.66, "bounds": [[19.30, 81.30], [19.90, 82.00]]},
+    "Aligarh": {"lat": 27.89, "lng": 78.08, "bounds": [[27.65, 77.40], [28.25, 78.20]]},
+    "Banda": {"lat": 25.48, "lng": 80.33, "bounds": [[24.85, 80.05], [25.55, 80.85]]},
+    "Jhabua": {"lat": 22.76, "lng": 74.59, "bounds": [[22.50, 74.30], [23.00, 74.80]]},
+    "Sehore": {"lat": 23.20, "lng": 77.08, "bounds": [[22.90, 76.80], [23.50, 77.40]]},
+    "Prayagraj": {"lat": 25.43, "lng": 81.84, "bounds": [[25.10, 81.50], [25.80, 82.20]]},
+    "Dhar": {"lat": 22.59, "lng": 75.30, "bounds": [[22.30, 75.00], [22.90, 75.60]]},
+}
+
+
+# =============================================================================
+# 4. CLIMATE SIGNALS DATA
+# =============================================================================
+@st.cache_data(show_spinner=False)
 def load_climate_data() -> pd.DataFrame:
     path = "data/climate_vulnerability/climate_vulnerability_results.csv"
-    if os.path.exists(path):
+    if not os.path.exists(path):
+        return pd.DataFrame()
+
+    try:
+        df = pd.read_csv(path)
+        df.columns = df.columns.str.strip().str.lower()
+        return df
+    except Exception as exc:
+        st.error(f"Error reading climate CSV: {exc}")
+        return pd.DataFrame()
+
+
+# =============================================================================
+# 5. VERBATIM DATA
+# =============================================================================
+@st.cache_data(show_spinner=False)
+def load_verbatim_data() -> pd.DataFrame:
+    path = "data/lcat/LCAT_Verbatim_Quote_Classification.xlsx"
+    if not os.path.exists(path):
+        return pd.DataFrame()
+
+    # The verbatim workbook contains introductory rows before the real header.
+    # Try the known structure first, then safely fall back to detected headers.
+    attempts = [2, 1, 0]
+    for header_row in attempts:
         try:
-            df = pd.read_csv(path)
-            df.columns = df.columns.str.strip().str.lower()
-            return df
+            df = pd.read_excel(path, header=header_row)
+            df.columns = [str(c).strip() for c in df.columns]
+            required_markers = ["State", "District", "Primary LCAT Element"]
+            if all(marker in df.columns for marker in required_markers):
+                for c in ["State", "District", "Block / Tehsil", "Panchayat", "Village",
+                          "Speaker / Attribution", "Verbatim Quote", "Primary LCAT Element"]:
+                    if c in df.columns:
+                        df[c] = df[c].apply(normalize_text)
+                df["Clean_Theme"] = df["Primary LCAT Element"].apply(normalize_theme)
+                return df
         except Exception:
-            pass
+            continue
+
+    st.warning("The LCAT verbatim workbook could not be matched to its expected columns.")
     return pd.DataFrame()
 
-# -----------------------------------------------------------------------------
-# 4. MODALS & OVERLAYS
-# -----------------------------------------------------------------------------
-@st.dialog("Theme Insights", width="large")
-def show_theme_overlay(theme: str, state: str, district: str, village: str, raw_df: pd.DataFrame):
-    st.markdown(f"<h2 style='color: var(--pine); margin-top: 0; margin-bottom: 20px; font-family: Space Grotesk;'>{theme}</h2>", unsafe_allow_html=True)
-    
-    col_act, col_voice = st.columns([1.2, 1.0])
-    
-    with col_act:
-        st.markdown("<div class='section-label' style='margin-top:0;'>Priority Actions</div>", unsafe_allow_html=True)
-        if not raw_df.empty:
-            df_gpdp = raw_df[raw_df['State'] == state] if state != "Unknown" else raw_df
-            if district != "All Districts": df_gpdp = df_gpdp[df_gpdp['District'] == district]
-            if village != "All Villages": df_gpdp = df_gpdp[df_gpdp['Panchayat/Village'] == village]
-            df_gpdp = df_gpdp[df_gpdp['Clean_Theme'] == theme]
-            
-            if not df_gpdp.empty:
-                st.markdown(f"<div style='font-size: 0.95rem; color: var(--ink-soft); margin-bottom: 20px; font-family: IBM Plex Mono;'><b>{len(df_gpdp)}</b> actions</div>", unsafe_allow_html=True)
-                
-                tier_groups = {
-                    "Tier 1 — Community Led": {"color": "#d97706", "actions": []},
-                    "Tier 2 — Minor Support": {"color": "#712416", "actions": []},
-                    "Tier 3 — External Support & Convergence": {"color": "#0ea5e9", "actions": []},
-                }
-                
-                for _, row in df_gpdp.iterrows():
-                    tier = row['Clean_Tier']
-                    if tier in tier_groups:
-                        tier_groups[tier]["actions"].append({"text": row.get("Priority Action", "N/A"), "pillars": row['Clean_Pillar']})
-                
-                for group_name, group_data in tier_groups.items():
-                    actions = group_data["actions"]
-                    color = group_data["color"]
-                    if actions:
-                        st.markdown(f"""
-                        <div style="margin-top: 16px; margin-bottom: 12px;">
-                            <div style="font-size: 1rem; font-weight: 700; color: {color};">{group_name}</div>
-                            <div style="font-size: 0.8rem; color: var(--ink-soft);">{len(actions)} actions</div>
-                        </div>
-                        """, unsafe_allow_html=True)
-                        
-                        for idx, act in enumerate(actions, 1):
-                            pill_html = f'<span style="background: var(--paper-deep); padding: 2px 6px; border-radius: 4px; font-size: 0.75rem; color: var(--ink-soft);">{act["pillars"]}</span>' if act["pillars"] != "Unknown" else ''
-                            st.markdown(f"""
-                            <div style="background: var(--card); border: 1px solid var(--line); border-left: 4px solid {color}; border-radius: 6px; padding: 12px; margin-bottom: 12px; display: flex; gap: 12px;">
-                                <div style="color: {color}; font-weight: 700; font-size: 0.95rem; font-family: IBM Plex Mono;">{idx:02d}</div>
-                                <div>
-                                    <div style="font-size: 0.95rem; color: var(--ink); font-weight: 500; margin-bottom: 6px; line-height: 1.4;">{act['text']}</div>
-                                    <div style="margin-top: 6px;">{pill_html}</div>
-                                </div>
-                            </div>
-                            """, unsafe_allow_html=True)
-            else:
-                st.info("No specific priority actions found for this selection.")
-        else:
-            st.info("Priority Action data source not available.")
-            
-    with col_voice:
-        st.markdown("<div class='section-label' style='margin-top:0;'>Community Voices</div>", unsafe_allow_html=True)
-        quotes_path = "data/lcat/LCAT_Verbatim_Quote_Classification.xlsx"
-        if os.path.exists(quotes_path):
-            try:
-                df_quotes = pd.read_excel(quotes_path)
-                if state != "Unknown": df_quotes = df_quotes[df_quotes['State'] == state]
-                if district != "All Districts": df_quotes = df_quotes[df_quotes['District'] == district]
-                df_quotes = df_quotes[df_quotes['Primary LCAT Element'] == theme]
-                
-                display_quotes = pd.DataFrame()
-                fallback_used = False
-                
-                if village != "All Villages":
-                    village_quotes = df_quotes[df_quotes['Village'] == village]
-                    if not village_quotes.empty: display_quotes = village_quotes
-                    else: 
-                        display_quotes = df_quotes
-                        fallback_used = True
-                else:
-                    display_quotes = df_quotes
-                    
-                if fallback_used and not display_quotes.empty:
-                    st.caption("Showing *District-level evidence* (No specific quotes for selected village)")
-                    
-                if not display_quotes.empty:
-                    for _, row in display_quotes.iterrows():
-                        quote = row.get("Verbatim Quote", "")
-                        if pd.isna(quote) or not str(quote).strip(): continue
-                        speaker = row.get("Speaker / Attribution", "Community Member")
-                        st.markdown(f"""
-                        <div style="background: var(--card); border-left: 4px solid var(--moss); padding: 16px; margin-bottom: 16px; border-radius: 0 6px 6px 0; border: 1px solid var(--line); border-left-width: 4px;">
-                            <div style="font-size: 1.05rem; color: var(--ink); font-style: italic; margin-bottom: 12px;">"{quote}"</div>
-                            <div style="font-size: 0.8rem; color: var(--ink-soft); font-family: 'IBM Plex Mono', monospace;">
-                                <span style="font-weight: 600; color: var(--ink);">{speaker}</span>
-                            </div>
-                        </div>
-                        """, unsafe_allow_html=True)
-                else:
-                    st.info("No verbatim quotes available for this theme at the selected geography.")
-            except Exception:
-                st.info("Error reading Community Voices file.")
-        else:
-            st.info("Community Voices dataset not found.")
 
-# -----------------------------------------------------------------------------
-# MAIN APP EXECUTION
-# -----------------------------------------------------------------------------
-with st.sidebar:
-    st.markdown('<div style="font-family: Space Grotesk; font-size: 14px; font-weight: bold; color: var(--pine); margin-bottom: 10px;">DASHBOARD MODE</div>', unsafe_allow_html=True)
-    dashboard_mode = st.radio("Mode", ["LCAT & GPDP", "Climate Signals"], label_visibility="collapsed")
+# =============================================================================
+# 6. TRAJECTORY DATA
+# =============================================================================
+@st.cache_data(show_spinner=False)
+def load_trajectory_data() -> pd.DataFrame:
+    path = "data/District Wise LCAT.xlsx"
+    if not os.path.exists(path):
+        return pd.DataFrame()
 
-if dashboard_mode == "LCAT & GPDP":
-    raw_gpdp_df = get_raw_gpdp_data()
-    
-    # -------------------------------------------------------------------------
-    # LAYOUT & CONTROLS
-    # -------------------------------------------------------------------------
-    st.markdown("""
-    <div class="lcat-header">
-      <svg class="brandmark" viewBox="0 0 40 40" fill="none">
-        <circle cx="20" cy="20" r="17" stroke="#B9863E" stroke-width="2"/>
-        <circle cx="20" cy="20" r="11" stroke="#7E9767" stroke-width="2"/>
-        <circle cx="20" cy="20" r="5" stroke="#FCFBF6" stroke-width="2"/>
-      </svg>
-      <div class="brand"><b>LCAT</b><span>LANDSCAPE CHARACTER ASSESSMENT TOOL</span></div>
-    </div>
-    """, unsafe_allow_html=True)
+    try:
+        df = pd.read_excel(path)
+        df.columns = [str(c).strip() for c in df.columns]
 
-    col_left, col_center, col_right = st.columns([1.2, 2.5, 1.4], gap="large")
+        district_col = next(
+            (c for c in df.columns if "district" in str(c).lower()), None
+        )
+        if district_col and district_col != "District":
+            df = df.rename(columns={district_col: "District"})
 
-    with col_left:
-        st.markdown('<div class="section-label">Geographic selection</div>', unsafe_allow_html=True)
-        
-        available_states = raw_gpdp_df["State"].dropna().unique().tolist() if not raw_gpdp_df.empty else ["No Data"]
-        selected_state = st.selectbox("State", available_states)
-        
-        if not raw_gpdp_df.empty and selected_state != "No Data":
-            state_df = raw_gpdp_df[raw_gpdp_df["State"] == selected_state]
-            dist_options = ["All Districts"] + state_df["District"].dropna().unique().tolist()
-        else:
-            dist_options = ["All Districts"]
-        selected_district = st.selectbox("District", dist_options)
-        
-        if selected_district != "All Districts" and not raw_gpdp_df.empty:
-            dist_df = state_df[state_df["District"] == selected_district]
-            block_options = ["All Blocks"] + dist_df["Block"].dropna().unique().tolist()
-            vill_options = ["All Villages"] + dist_df["Panchayat/Village"].dropna().unique().tolist()
-        else:
-            block_options = ["All Blocks"]
-            vill_options = ["All Villages"] + (state_df["Panchayat/Village"].dropna().unique().tolist() if not raw_gpdp_df.empty else [])
-            
-        selected_block = st.selectbox("Block", block_options)
-        
-        if selected_block != "All Blocks" and not raw_gpdp_df.empty:
-            block_df = state_df[(state_df["District"] == selected_district) & (state_df["Block"] == selected_block)]
-            vill_options = ["All Villages"] + block_df["Panchayat/Village"].dropna().unique().tolist()
-            
-        selected_village = st.selectbox("Gram Panchayat / Village", vill_options)
-        
-        st.markdown('<div class="section-label" style="margin-top: 30px;">Map layers</div>', unsafe_allow_html=True)
-        st.checkbox("LULC", value=True, help="Placeholder for future spatial layer")
-        st.checkbox("NDVI", value=True, help="Placeholder for future spatial layer")
-        st.checkbox("Soil", value=False, help="Placeholder for future spatial layer")
-        st.checkbox("DEM / Slope", value=False, help="Placeholder for future spatial layer")
-        st.checkbox("Rivers", value=True, help="Placeholder for future spatial layer")
-        st.checkbox("LCAT choropleth", value=True)
-        
-        st.markdown('<div class="section-label" style="margin-top: 30px;">Filter priority actions</div>', unsafe_allow_html=True)
-        
-        # Theme 'expandable' chip behavior simulated via selectbox state
-        if 'show_all_themes' not in st.session_state:
-            st.session_state.show_all_themes = False
-            
-        if not st.session_state.show_all_themes:
-            theme_options = ["All", "Hydrology", "Land cover and Agriculture", "+ 6 more themes"]
-        else:
-            theme_options = ["All"] + LCAT_ELEMENTS
-            
-        selected_theme_raw = st.selectbox("Landscape Themes", theme_options)
-        
-        if selected_theme_raw == "+ 6 more themes":
-            st.session_state.show_all_themes = True
-            st.rerun()
-            
-        selected_theme = selected_theme_raw if selected_theme_raw != "+ 6 more themes" else "All"
-        
-        selected_tier = st.selectbox("Tier", ["All", "Tier 1 — Community Led", "Tier 2 — Minor Support", "Tier 3 — External Support & Convergence"])
-        selected_pillar = st.selectbox("Pillar", ["All", "Restoration", "Adaptation", "Mitigation"])
+        # Normalize theme column names to the dashboard's exact eight themes.
+        rename_map = {}
+        for col in df.columns:
+            if col in ["District", "State"]:
+                continue
+            canonical = normalize_theme(col)
+            if canonical in LCAT_ELEMENTS:
+                rename_map[col] = canonical
 
-    # -------------------------------------------------------------------------
-    # DATA FILTERING (Applying the rules accurately to real data)
-    # -------------------------------------------------------------------------
-    filtered_df = raw_gpdp_df.copy()
-    if not filtered_df.empty:
-        if selected_state != "No Data": filtered_df = filtered_df[filtered_df['State'] == selected_state]
-        if selected_district != "All Districts": filtered_df = filtered_df[filtered_df['District'] == selected_district]
-        if selected_block != "All Blocks": filtered_df = filtered_df[filtered_df['Block'] == selected_block]
-        if selected_village != "All Villages": filtered_df = filtered_df[filtered_df['Panchayat/Village'] == selected_village]
-        
-        if selected_theme != "All": filtered_df = filtered_df[filtered_df['Clean_Theme'] == selected_theme]
-        if selected_tier != "All": filtered_df = filtered_df[filtered_df['Clean_Tier'] == selected_tier]
-        if selected_pillar != "All": filtered_df = filtered_df[filtered_df['Clean_Pillar'].str.contains(selected_pillar, case=False, na=False)]
+        df = df.rename(columns=rename_map)
 
-    # -------------------------------------------------------------------------
-    # CENTER MAP & SUMMARY
-    # -------------------------------------------------------------------------
-    crumb_state = selected_state if selected_state != "No Data" else "State"
-    crumb_dist = selected_district if selected_district != "All Districts" else "District"
-    crumb_block = selected_block if selected_block != "All Blocks" else "Block"
-    crumb_vill = selected_village if selected_village != "All Villages" else "Village"
+        return df
+    except Exception as exc:
+        st.warning(f"Could not read District Wise LCAT.xlsx: {exc}")
+        return pd.DataFrame()
 
-    st.markdown(f"""
-    <div class="breadcrumb">
-      <span>India</span><span class="sep">›</span>
-      <span>{crumb_state}</span><span class="sep">›</span>
-      <span>{crumb_dist}</span><span class="sep">›</span>
-      <span>{crumb_block}</span><span class="sep">›</span>
-      <span>GP</span><span class="sep">›</span>
-      <span class="current">{crumb_vill}</span>
-    </div>
-    """, unsafe_allow_html=True)
 
-    with col_center:
-        st.markdown('<div class="html-card">', unsafe_allow_html=True)
-        st.markdown(f"<div style='font-family: Space Grotesk; font-size: 15px; margin-bottom: 10px;'>{crumb_dist} — Geospatial View<br><span style='font-family: IBM Plex Mono; font-size: 11px; color: var(--ink-soft);'>Filtered LCAT locations</span></div>", unsafe_allow_html=True)
-        
-        center_lat, center_lng = 21.0, 81.0
-        zoom_start = 8
-        if selected_district in DISTRICT_CENTERS:
-            center_lat, center_lng = DISTRICT_CENTERS[selected_district]["lat"], DISTRICT_CENTERS[selected_district]["lng"]
-            zoom_start = 9
-        
-        m = folium.Map(location=[center_lat, center_lng], zoom_start=zoom_start, tiles="CartoDB positron")
-        
-        # Build map points from filtered data
-        v_count = 0
-        if not filtered_df.empty:
-            village_groups = filtered_df.groupby('Panchayat/Village')
-            v_count = len(village_groups)
-            
-            for v_name, group in village_groups:
-                total_demands = len(group)
-                dominant = group['Clean_Theme'].mode()
-                dom_element = dominant.iloc[0] if not dominant.empty else "Unknown"
-                
-                # Jitter for map display based on district center
-                dist_name = group['District'].iloc[0] if 'District' in group.columns else ""
-                dc = DISTRICT_CENTERS.get(dist_name, {"lat": center_lat, "lng": center_lng})
-                lat = dc["lat"] + np.random.uniform(-0.15, 0.15)
-                lng = dc["lng"] + np.random.uniform(-0.15, 0.15)
-                
-                radius = max(6, min(22, int(total_demands * 0.5)))
-                fill_col = ELEMENT_COLORS.get(dom_element, "#cbd5e1")
-                
-                folium.CircleMarker(
-                    location=[lat, lng], radius=radius, color="#FCFBF6", weight=1.5, fill=True, fill_color=fill_col, fill_opacity=0.85,
-                    tooltip=folium.Tooltip(f"<div style='font-family:IBM Plex Sans;padding:8px;'><b>{v_name}</b><br>Filtered Demands: {total_demands}<br>Dom. Theme: {dom_element}</div>", sticky=True)
-                ).add_to(m)
-            
-        st_folium(m, use_container_width=True, height=400, returned_objects=[])
-        st.markdown('</div>', unsafe_allow_html=True)
+# =============================================================================
+# 7. MAP HELPERS
+# =============================================================================
+def get_demand_color(demand: int) -> str:
+    if demand <= 35:
+        return "#fef08a"
+    if demand <= 65:
+        return "#f59e0b"
+    if demand <= 90:
+        return "#ea580c"
+    return "#712416"
 
-        # Block Summary
-        if not filtered_df.empty:
-            total_actions = len(filtered_df)
-            t1_count = len(filtered_df[filtered_df['Clean_Tier'] == 'Tier 1 — Community Led'])
-            t2_count = len(filtered_df[filtered_df['Clean_Tier'] == 'Tier 2 — Minor Support'])
-            t3_count = len(filtered_df[filtered_df['Clean_Tier'] == 'Tier 3 — External Support & Convergence'])
-        else:
-            total_actions = t1_count = t2_count = t3_count = 0
-            
-        p1 = (t1_count / total_actions * 100) if total_actions > 0 else 0
-        p2 = (t2_count / total_actions * 100) if total_actions > 0 else 0
-        p3 = (t3_count / total_actions * 100) if total_actions > 0 else 0
 
-        st.markdown(f"""
-        <div class="block-summary">
-            <h3>{crumb_block} Summary <span class="n">{v_count} villages · {total_actions} priority actions</span></h3>
-            <div class="dist-bar">
-                <div style="width:{p1}%;background:{tier_colors['Tier 1 — Community Led']}"></div>
-                <div style="width:{p2}%;background:{tier_colors['Tier 2 — Minor Support']}"></div>
-                <div style="width:{p3}%;background:{tier_colors['Tier 3 — External Support & Convergence']}"></div>
+def get_map_center(selected_district: str, filtered_geo: pd.DataFrame):
+    if selected_district in DISTRICT_CENTERS:
+        center = DISTRICT_CENTERS[selected_district]
+        return center["lat"], center["lng"], 9
+
+    if not filtered_geo.empty:
+        return (
+            float(filtered_geo["lat"].mean()),
+            float(filtered_geo["lng"].mean()),
+            8,
+        )
+
+    return 21.0, 81.0, 6
+
+
+def make_map(
+    filtered_geo: pd.DataFrame,
+    selected_district: str,
+    basemap_choice: str,
+):
+    center_lat, center_lng, zoom_start = get_map_center(
+        selected_district, filtered_geo
+    )
+
+    tile_dict = {
+        "CartoDB Positron": "CartoDB positron",
+        "OpenStreetMap": "OpenStreetMap",
+        "CartoDB Dark": "CartoDB dark_matter",
+    }
+
+    m = folium.Map(
+        location=[center_lat, center_lng],
+        zoom_start=zoom_start,
+        tiles=tile_dict.get(basemap_choice, "CartoDB positron"),
+        control_scale=True,
+    )
+
+    for _, row in filtered_geo.iterrows():
+        radius = max(6, min(20, int(max(1, row["totalDemand"]) * 0.35)))
+        fill = get_demand_color(int(row["totalDemand"]))
+
+        tooltip_html = f"""
+        <div style="
+            background:#FCFBF6;
+            color:#20281F;
+            border:1px solid #C9C2AC;
+            border-top:3px solid #B9863E;
+            border-radius:6px;
+            padding:10px;
+            min-width:185px;
+            font-family:'IBM Plex Sans',sans-serif;
+        ">
+            <div style="font-weight:700;font-size:14px;">{html.escape(str(row['name']))}</div>
+            <div style="font-size:11px;color:#4C5646;margin-top:4px;">
+                {html.escape(str(row['block']))} · {html.escape(str(row['district']))}
             </div>
-            <div class="tier-counts">
-                <div><b>{t1_count}</b><span>Tier 1 actions</span></div>
-                <div><b>{t2_count}</b><span>Tier 2 actions</span></div>
-                <div><b>{t3_count}</b><span>Tier 3 actions</span></div>
+            <div style="font-size:12px;font-weight:600;color:#243D2C;margin-top:8px;">
+                Total GPDP Demands: {int(row['totalDemand'])}
+            </div>
+            <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:#4C5646;margin-top:6px;">
+                T1: {int(row['tier1'])} · T2: {int(row['tier2'])} · T3: {int(row['tier3'])}
+            </div>
+            <div style="font-size:10px;color:#4C5646;margin-top:5px;">
+                Highest Demand Concentration: {html.escape(str(row['dominantElement']))}
             </div>
         </div>
-        """, unsafe_allow_html=True)
+        """
+
+        folium.CircleMarker(
+            location=[row["lat"], row["lng"]],
+            radius=radius,
+            color="#FCFBF6",
+            weight=1.5,
+            fill=True,
+            fill_color=fill,
+            fill_opacity=0.84,
+            tooltip=folium.Tooltip(tooltip_html, sticky=True),
+        ).add_to(m)
+
+    return m
+
+
+# =============================================================================
+# 8. THEME INSIGHTS MODAL
+# =============================================================================
+@st.dialog("Theme Insights", width="large")
+def show_theme_overlay(
+    theme: str,
+    state: str,
+    district: str,
+    village: str,
+):
+    st.markdown(
+        f"<h2 style='font-family:Space Grotesk,sans-serif;color:{COLORS['pine']};"
+        f"margin:0 0 4px 0;'>{html.escape(theme)}</h2>",
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        "<div class='modal-hint'>Priority actions and community evidence for the selected geography.</div>",
+        unsafe_allow_html=True,
+    )
+
+    df_gpdp = load_gpdp_data()
+
+    if not df_gpdp.empty:
+        action_df = df_gpdp.copy()
+        if state and state != "Unknown" and "State" in action_df.columns:
+            action_df = action_df[action_df["State"] == state]
+        if district and district != "All Districts" and "District" in action_df.columns:
+            action_df = action_df[action_df["District"] == district]
+        if village and village != "All Villages" and "Panchayat/Village" in action_df.columns:
+            action_df = action_df[action_df["Panchayat/Village"] == village]
+        if "Clean_Theme" in action_df.columns:
+            action_df = action_df[action_df["Clean_Theme"] == theme]
+    else:
+        action_df = pd.DataFrame()
+
+    df_quotes = load_verbatim_data()
+
+    if not df_quotes.empty:
+        quote_df = df_quotes.copy()
+        if state and state != "Unknown" and "State" in quote_df.columns:
+            quote_df = quote_df[quote_df["State"] == state]
+        if district and district != "All Districts" and "District" in quote_df.columns:
+            quote_df = quote_df[quote_df["District"] == district]
+        quote_df = quote_df[quote_df["Clean_Theme"] == theme]
+
+        fallback_used = False
+        if village and village != "All Villages" and "Village" in quote_df.columns:
+            village_quotes = quote_df[quote_df["Village"] == village]
+            if not village_quotes.empty:
+                quote_df = village_quotes
+            else:
+                fallback_used = True
+        else:
+            fallback_used = False
+    else:
+        quote_df = pd.DataFrame()
+        fallback_used = False
+
+    left, right = st.columns([1.2, 1.0], gap="large")
+
+    with left:
+        st.markdown("### Priority Actions")
+
+        if action_df.empty:
+            st.info("No specific Priority Actions found for this selection.")
+        else:
+            st.markdown(
+                f"<div class='subtle-note'><b>{len(action_df)}</b> actions</div>",
+                unsafe_allow_html=True,
+            )
+
+            tier_groups = [
+                ("Tier 1 — Community Led", "t1"),
+                ("Tier 2 — Minor Support", "t2"),
+                ("Tier 3 — External Support & Convergence", "t3"),
+            ]
+
+            for tier_name, tier_class in tier_groups:
+                group = action_df[action_df["Clean_Tier"] == tier_name]
+                if group.empty:
+                    continue
+
+                st.markdown(
+                    f"<div class='section-label' style='color:{TIER_COLORS[tier_name]};"
+                    f"margin-top:16px;'>{tier_name}</div>",
+                    unsafe_allow_html=True,
+                )
+
+                for idx, (_, row) in enumerate(group.iterrows(), 1):
+                    action_text = normalize_text(row.get("Priority Action", ""))
+                    pillar = normalize_text(row.get("Clean_Pillar", ""))
+                    if not action_text:
+                        continue
+
+                    pillar_tag = (
+                        f"<span class='tag'>{html.escape(pillar)}</span>"
+                        if pillar and pillar != "Unknown" else ""
+                    )
+
+                    st.markdown(
+                        f"""
+                        <div class="action-preview {tier_class}">
+                            <div class="text">{html.escape(action_text)}</div>
+                            <div class="tag-row">
+                                <span class="tag {tier_class}">
+                                    {html.escape(tier_name)}
+                                </span>
+                                <span class="tag">{html.escape(theme)}</span>
+                                {pillar_tag}
+                            </div>
+                        </div>
+                        """,
+                        unsafe_allow_html=True,
+                    )
+
+    with right:
+        st.markdown("### Community Voices")
+
+        if fallback_used and not quote_df.empty:
+            st.caption(
+                "Showing district-level evidence because no specific village quote was found."
+            )
+
+        if quote_df.empty:
+            st.info("No verbatim quotes available for this theme at the selected geography.")
+        else:
+            for _, row in quote_df.iterrows():
+                quote = normalize_text(row.get("Verbatim Quote", ""))
+                if not quote:
+                    continue
+                speaker = normalize_text(
+                    row.get("Speaker / Attribution", "Community Member")
+                )
+
+                st.markdown(
+                    f"""
+                    <div class="quote-card">
+                        <div class="quote">“{html.escape(quote)}”</div>
+                        <div class="speaker">{html.escape(speaker)}</div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+
+
+# =============================================================================
+# 9. SESSION STATE
+# =============================================================================
+if "dashboard_mode" not in st.session_state:
+    st.session_state["dashboard_mode"] = "LCAT & GPDP"
+
+if "theme_filter" not in st.session_state:
+    st.session_state["theme_filter"] = "All"
+
+if "show_all_themes" not in st.session_state:
+    st.session_state["show_all_themes"] = False
+
+if "tier_filter" not in st.session_state:
+    st.session_state["tier_filter"] = "All"
+
+if "pillar_filter" not in st.session_state:
+    st.session_state["pillar_filter"] = "All"
+
+if "basemap_choice" not in st.session_state:
+    st.session_state["basemap_choice"] = "CartoDB Positron"
+
+
+# =============================================================================
+# 10. LOAD BASE DATA
+# =============================================================================
+df_gpdp = load_gpdp_data()
+df_villages = build_village_summary(df_gpdp)
+
+available_states = (
+    sorted(df_villages["state"].dropna().unique().tolist())
+    if not df_villages.empty else []
+)
+
+# Climate mode data is loaded separately below.
+
+
+# =============================================================================
+# 11. LCAT & GPDP MODE
+# =============================================================================
+dashboard_mode = st.session_state["dashboard_mode"]
+
+# Compact mode selector. It deliberately sits outside the large dashboard canvas.
+mode_choice = st.radio(
+    "Dashboard mode",
+    ["LCAT & GPDP", "Climate Signals"],
+    index=0 if dashboard_mode == "LCAT & GPDP" else 1,
+    horizontal=True,
+    label_visibility="collapsed",
+    key="mode_selector",
+)
+st.session_state["dashboard_mode"] = mode_choice
+dashboard_mode = mode_choice
+
+
+if dashboard_mode == "LCAT & GPDP":
+    # -------------------------------------------------------------------------
+    # Header
+    # -------------------------------------------------------------------------
+    display_state = st.session_state.get("lcat_state", available_states[0] if available_states else "Unknown")
+    display_district = st.session_state.get("lcat_dist", "All Districts")
+    display_block = st.session_state.get("lcat_block", "All Blocks")
+    display_village = st.session_state.get("lcat_vill", "All Villages")
+
+    display_level = (
+        "Village" if display_village != "All Villages"
+        else "Block" if display_block != "All Blocks"
+        else "District" if display_district != "All Districts"
+        else "State"
+    )
+
+    st.markdown(
+        f"""
+        <div class="lcat-header">
+            <svg class="lcat-brandmark" viewBox="0 0 40 40" fill="none">
+                <circle cx="20" cy="20" r="17" stroke="#B9863E" stroke-width="2"/>
+                <circle cx="20" cy="20" r="11" stroke="#7E9767" stroke-width="2"/>
+                <circle cx="20" cy="20" r="5" stroke="#FCFBF6" stroke-width="2"/>
+            </svg>
+            <div class="lcat-brand">
+                <strong>LCAT</strong>
+                <small>LANDSCAPE CHARACTER ASSESSMENT TOOL</small>
+            </div>
+            <div style="margin-left:auto;display:flex;align-items:center;gap:3px;
+                        background:rgba(0,0,0,.2);padding:3px;border-radius:8px;">
+                <span style="font-family:'IBM Plex Mono';font-size:10.5px;color:#CBD4C4;padding:7px 9px;">India</span>
+                <span style="font-family:'IBM Plex Mono';font-size:10.5px;color:#CBD4C4;padding:7px 9px;">State</span>
+                <span style="font-family:'IBM Plex Mono';font-size:10.5px;color:#CBD4C4;padding:7px 9px;">District</span>
+                <span style="font-family:'IBM Plex Mono';font-size:10.5px;color:#CBD4C4;padding:7px 9px;">Block</span>
+                <span style="font-family:'IBM Plex Mono';font-size:10.5px;color:#CBD4C4;padding:7px 9px;">GP</span>
+                <span style="font-family:'IBM Plex Mono';font-size:10.5px;background:#B9863E;color:#241505;
+                             font-weight:600;padding:7px 10px;border-radius:6px;">{display_level}</span>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    # -------------------------------------------------------------------------
+    # Canonical compact geographic selection row.
+    # -------------------------------------------------------------------------
+    if not available_states:
+        selected_state = "Unknown"
+        selected_district = "All Districts"
+        selected_block = "All Blocks"
+        selected_village = "All Villages"
+        state_geo = pd.DataFrame()
+        district_geo = pd.DataFrame()
+        block_geo = pd.DataFrame()
+    else:
+        state_col, district_col, block_col, village_col = st.columns(
+            [1.0, 1.0, 1.0, 1.2], gap="small"
+        )
+
+        with state_col:
+            st.markdown("<div class='subtle-note'>STATE</div>", unsafe_allow_html=True)
+            state_index = (
+                available_states.index(display_state)
+                if display_state in available_states else 0
+            )
+            selected_state = st.selectbox(
+                "State",
+                available_states,
+                index=state_index,
+                key="lcat_state",
+                label_visibility="collapsed",
+            )
+
+        state_geo = df_villages[df_villages["state"] == selected_state]
+
+        dist_options = ["All Districts"] + sorted(
+            state_geo["district"].dropna().unique().tolist()
+        )
+        current_dist = display_district if display_district in dist_options else "All Districts"
+
+        with district_col:
+            st.markdown("<div class='subtle-note'>DISTRICT</div>", unsafe_allow_html=True)
+            selected_district = st.selectbox(
+                "District",
+                dist_options,
+                index=dist_options.index(current_dist),
+                key="lcat_dist",
+                label_visibility="collapsed",
+            )
+
+        district_geo = (
+            state_geo[state_geo["district"] == selected_district]
+            if selected_district != "All Districts"
+            else state_geo
+        )
+
+        block_options = ["All Blocks"] + sorted(
+            district_geo["block"].dropna().unique().tolist()
+        )
+        current_block = display_block if display_block in block_options else "All Blocks"
+
+        with block_col:
+            st.markdown("<div class='subtle-note'>BLOCK</div>", unsafe_allow_html=True)
+            selected_block = st.selectbox(
+                "Block",
+                block_options,
+                index=block_options.index(current_block),
+                key="lcat_block",
+                label_visibility="collapsed",
+            )
+
+        block_geo = (
+            district_geo[district_geo["block"] == selected_block]
+            if selected_block != "All Blocks"
+            else district_geo
+        )
+
+        village_options = ["All Villages"] + sorted(
+            block_geo["name"].dropna().unique().tolist()
+        )
+        current_village = (
+            display_village if display_village in village_options else "All Villages"
+        )
+
+        with village_col:
+            st.markdown("<div class='subtle-note'>VILLAGE / GP</div>", unsafe_allow_html=True)
+            selected_village = st.selectbox(
+                "Gram Panchayat / Village",
+                village_options,
+                index=village_options.index(current_village),
+                key="lcat_vill",
+                label_visibility="collapsed",
+            )
+
+    # Recompute final geography after all selections.
+    if available_states:
+        state_geo = df_villages[df_villages["state"] == selected_state]
+        district_geo = (
+            state_geo[state_geo["district"] == selected_district]
+            if selected_district != "All Districts"
+            else state_geo
+        )
+        block_geo = (
+            district_geo[district_geo["block"] == selected_block]
+            if selected_block != "All Blocks"
+            else district_geo
+        )
+
+    # Breadcrumb is the primary geographic display.
+    breadcrumb = ["India"]
+    if selected_state != "Unknown":
+        breadcrumb.append(selected_state)
+    if selected_district != "All Districts":
+        breadcrumb.append(f"{selected_district} District")
+    if selected_block != "All Blocks":
+        breadcrumb.append(f"{selected_block} Block")
+    if selected_village != "All Villages":
+        breadcrumb.append(selected_village)
+
+    breadcrumb_html = ""
+    for idx, part in enumerate(breadcrumb):
+        if idx:
+            breadcrumb_html += '<span class="sep">›</span>'
+        cls = "current" if idx == len(breadcrumb) - 1 else ""
+        breadcrumb_html += f'<span class="{cls}">{html.escape(part)}</span>'
+
+    st.markdown(
+        f'<div class="breadcrumb">{breadcrumb_html}</div>',
+        unsafe_allow_html=True,
+    )
+
+    filtered_geo = df_villages.copy()
+    if selected_state != "Unknown":
+        filtered_geo = filtered_geo[filtered_geo["state"] == selected_state]
+    if selected_district != "All Districts":
+        filtered_geo = filtered_geo[filtered_geo["district"] == selected_district]
+    if selected_block != "All Blocks":
+        filtered_geo = filtered_geo[filtered_geo["block"] == selected_block]
+    if selected_village != "All Villages":
+        filtered_geo = filtered_geo[filtered_geo["name"] == selected_village]
+
+    # -------------------------------------------------------------------------
+    # THREE-COLUMN CORE WORKSPACE
+    # -------------------------------------------------------------------------
+    # THREE-COLUMN CORE WORKSPACE
+    # -------------------------------------------------------------------------
+    # -------------------------------------------------------------------------
+    left_col, center_col, right_col = st.columns([0.84, 1.85, 1.02], gap="medium")
+
+    # -------------------------------------------------------------------------
+    # LEFT PANEL: layers + filters
+    # -------------------------------------------------------------------------
+    with left_col:
+        st.markdown("<div class='section-label' style='margin-top:0;'>Map layers</div>", unsafe_allow_html=True)
+
+        # Placeholder controls only. They do not invent or draw unsupported data.
+        for label in ["LULC (Placeholder)", "NDVI (Placeholder)", "Soil (Placeholder)",
+                      "DEM / Slope (Placeholder)", "Rivers (Placeholder)", "LCAT choropleth"]:
+            st.toggle(label, value=(label == "LCAT choropleth"), key=f"layer_{label}")
+
+        st.markdown("<div class='section-label'>Filter priority actions</div>", unsafe_allow_html=True)
+
+        st.markdown(
+            "<div class='subtle-note' style='margin-bottom:6px;'>LANDSCAPE THEMES</div>",
+            unsafe_allow_html=True,
+        )
+
+        visible_themes = LCAT_ELEMENTS[:3] if not st.session_state["show_all_themes"] else LCAT_ELEMENTS
+
+        theme_cols = st.columns(2)
+        theme_choices = ["All"] + visible_themes
+
+        for idx, option in enumerate(theme_choices):
+            with theme_cols[idx % 2]:
+                active = st.session_state["theme_filter"] == option
+                if st.button(
+                    option,
+                    key=f"theme_chip_{idx}_{option}",
+                    width="stretch",
+                    type="primary" if active else "secondary",
+                ):
+                    st.session_state["theme_filter"] = option
+                    st.rerun()
+
+        if not st.session_state["show_all_themes"]:
+            if st.button("+5 more", key="expand_themes", width="stretch"):
+                st.session_state["show_all_themes"] = True
+                st.rerun()
+        else:
+            if st.button("Show fewer", key="collapse_themes", width="stretch"):
+                st.session_state["show_all_themes"] = False
+                if st.session_state["theme_filter"] not in ["All"] + LCAT_ELEMENTS[:3]:
+                    st.session_state["theme_filter"] = "All"
+                st.rerun()
+
+        st.markdown(
+            "<div class='subtle-note' style='margin:10px 0 6px;'>TIER</div>",
+            unsafe_allow_html=True,
+        )
+        tier_choices = ["All"] + list(TIER_COLORS.keys())
+        tier_labels = {
+            "All": "All",
+            "Tier 1 — Community Led": "Tier 1",
+            "Tier 2 — Minor Support": "Tier 2",
+            "Tier 3 — External Support & Convergence": "Tier 3",
+        }
+        tc = st.columns(2)
+        for idx, option in enumerate(tier_choices):
+            with tc[idx % 2]:
+                active = st.session_state["tier_filter"] == option
+                if st.button(
+                    tier_labels[option],
+                    key=f"tier_chip_{idx}",
+                    width="stretch",
+                    type="primary" if active else "secondary",
+                ):
+                    st.session_state["tier_filter"] = option
+                    st.rerun()
+
+        st.markdown(
+            "<div class='subtle-note' style='margin:10px 0 6px;'>PILLAR</div>",
+            unsafe_allow_html=True,
+        )
+        pillar_choices = ["All"] + PILLARS
+        pc = st.columns(2)
+        for idx, option in enumerate(pillar_choices):
+            with pc[idx % 2]:
+                active = st.session_state["pillar_filter"] == option
+                if st.button(
+                    option,
+                    key=f"pillar_chip_{idx}",
+                    width="stretch",
+                    type="primary" if active else "secondary",
+                ):
+                    st.session_state["pillar_filter"] = option
+                    st.rerun()
+
+        st.markdown("<div class='section-label'>Basemap</div>", unsafe_allow_html=True)
+        st.session_state["basemap_choice"] = st.selectbox(
+            "Basemap",
+            ["CartoDB Positron", "OpenStreetMap", "CartoDB Dark"],
+            index=["CartoDB Positron", "OpenStreetMap", "CartoDB Dark"].index(
+                st.session_state["basemap_choice"]
+            ),
+            label_visibility="collapsed",
+        )
+
+    # -------------------------------------------------------------------------
+    # CENTRAL MAP + BLOCK SUMMARY
+    # -------------------------------------------------------------------------
+    with center_col:
+        map_title = (
+            f"{selected_block} — Geospatial View"
+            if selected_block != "All Blocks"
+            else f"{selected_district if selected_district != 'All Districts' else selected_state} — Geospatial View"
+        )
+
+        st.markdown(
+            f"""
+            <div class="card">
+                <div class="map-title">
+                    <h2>{html.escape(map_title)}</h2>
+                    <span>LCAT village demand view · current selection</span>
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        map_obj = make_map(
+            filtered_geo,
+            selected_district,
+            st.session_state["basemap_choice"],
+        )
+        st_folium(
+            map_obj,
+            use_container_width=True,
+            height=500,
+            returned_objects=[],
+        )
+
+        # Filter actual action records according to action filter controls.
+        filtered_actions = df_gpdp.copy()
+        if not filtered_actions.empty:
+            if selected_state != "Unknown" and "State" in filtered_actions.columns:
+                filtered_actions = filtered_actions[filtered_actions["State"] == selected_state]
+            if selected_district != "All Districts" and "District" in filtered_actions.columns:
+                filtered_actions = filtered_actions[filtered_actions["District"] == selected_district]
+            if selected_block != "All Blocks" and "Block" in filtered_actions.columns:
+                filtered_actions = filtered_actions[filtered_actions["Block"] == selected_block]
+            if selected_village != "All Villages" and "Panchayat/Village" in filtered_actions.columns:
+                filtered_actions = filtered_actions[
+                    filtered_actions["Panchayat/Village"] == selected_village
+                ]
+            if st.session_state["theme_filter"] != "All":
+                filtered_actions = filtered_actions[
+                    filtered_actions["Clean_Theme"] == st.session_state["theme_filter"]
+                ]
+            if st.session_state["tier_filter"] != "All":
+                filtered_actions = filtered_actions[
+                    filtered_actions["Clean_Tier"] == st.session_state["tier_filter"]
+                ]
+            if st.session_state["pillar_filter"] != "All":
+                filtered_actions = filtered_actions[
+                    filtered_actions["Clean_Pillar"] == st.session_state["pillar_filter"]
+                ]
+
+        summary_scope = (
+            selected_block if selected_block != "All Blocks"
+            else selected_district if selected_district != "All Districts"
+            else selected_state
+        )
+
+        scope_villages = filtered_geo["name"].nunique() if not filtered_geo.empty else 0
+        total_actions = len(filtered_actions)
+
+        t1_count = int((filtered_actions["Clean_Tier"] == "Tier 1 — Community Led").sum()) if not filtered_actions.empty else 0
+        t2_count = int((filtered_actions["Clean_Tier"] == "Tier 2 — Minor Support").sum()) if not filtered_actions.empty else 0
+        t3_count = int((filtered_actions["Clean_Tier"] == "Tier 3 — External Support & Convergence").sum()) if not filtered_actions.empty else 0
+        tier_total = t1_count + t2_count + t3_count
+
+        if tier_total > 0:
+            widths = [
+                f"{100 * t1_count / tier_total:.3f}%",
+                f"{100 * t2_count / tier_total:.3f}%",
+                f"{100 * t3_count / tier_total:.3f}%",
+            ]
+        else:
+            widths = ["0%", "0%", "0%"]
+
+        st.markdown(
+            f"""
+            <div class="card" style="margin-top:14px;">
+                <div class="summary-title">
+                    <h3>{html.escape(str(summary_scope))} Summary</h3>
+                    <span>{scope_villages} villages · {total_actions} priority actions</span>
+                </div>
+                <div class="tier-bar">
+                    <div style="width:{widths[0]};background:{TIER_COLORS['Tier 1 — Community Led']};"></div>
+                    <div style="width:{widths[1]};background:{TIER_COLORS['Tier 2 — Minor Support']};"></div>
+                    <div style="width:{widths[2]};background:{TIER_COLORS['Tier 3 — External Support & Convergence']};"></div>
+                </div>
+                <div class="tier-legend">
+                    <span><i class="legend-dot" style="background:{TIER_COLORS['Tier 1 — Community Led']};"></i>Tier 1</span>
+                    <span><i class="legend-dot" style="background:{TIER_COLORS['Tier 2 — Minor Support']};"></i>Tier 2</span>
+                    <span><i class="legend-dot" style="background:{TIER_COLORS['Tier 3 — External Support & Convergence']};"></i>Tier 3</span>
+                </div>
+                <div class="tier-counts">
+                    <div><span class="num">{t1_count}</span><span class="label">Tier 1 actions</span></div>
+                    <div><span class="num">{t2_count}</span><span class="label">Tier 2 actions</span></div>
+                    <div><span class="num">{t3_count}</span><span class="label">Tier 3 actions</span></div>
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
     # -------------------------------------------------------------------------
     # RIGHT PROFILE
     # -------------------------------------------------------------------------
-    with col_right:
-        st.markdown(f"""
-        <div class="profile-header">
-            <h2>{crumb_vill} Profile</h2>
-            <div class="loc">{crumb_block} · {crumb_dist} · {crumb_state}</div>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        st.markdown("""
-        <div class="score-block">
-            <div class="txt" style="width: 100%">
-                <b>Overall LCAT score</b>
-                <span class="cls">NaN</span>
-                <span style="font-size: 11px; color: var(--ink-soft); float: right; margin-top: 4px;">Score logic pending</span>
+    with right_col:
+        selected_profile = None
+        if selected_village != "All Villages" and not filtered_geo.empty:
+            selected_profile = filtered_geo.iloc[0]
+            profile_name = str(selected_profile["name"])
+            profile_loc = f"{selected_profile['block']} · {selected_profile['district']} · {selected_profile['state']}"
+        elif selected_block != "All Blocks":
+            profile_name = f"{selected_block} Profile"
+            profile_loc = f"{selected_district} · {selected_state}"
+        elif selected_district != "All Districts":
+            profile_name = f"{selected_district} Profile"
+            profile_loc = str(selected_state)
+        else:
+            profile_name = f"{selected_state} Profile"
+            profile_loc = "Current State selection"
+
+        st.markdown(
+            f"""
+            <div class="profile-header">
+                <h2 class="profile-title">{html.escape(profile_name)}</h2>
+                <div class="profile-location">{html.escape(profile_loc)}</div>
             </div>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        st.markdown('<div class="section-label">Sub-scores</div>', unsafe_allow_html=True)
-        for lbl in ["Physical condition", "Vegetation condition", "Hydrological condition", "Anthropogenic pressure (inv.)"]:
-            st.markdown(f"""
-            <div style="margin-bottom:10px;">
-                <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px;">
-                    <span>{lbl}</span><b style="font-family:'IBM Plex Mono'">NaN</b>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        # Condition-score placeholder: keep names/logic ready, values are NaN.
+        st.markdown(
+            """
+            <div class="score-card">
+                <div class="score-gauge"><span>NaN</span></div>
+                <div class="score-copy">
+                    <strong>Overall LCAT score</strong>
+                    <small>Score logic pending</small>
                 </div>
-                <div style="height:7px;background:var(--paper-deep);border-radius:4px;"></div>
             </div>
-            """, unsafe_allow_html=True)
+            """,
+            unsafe_allow_html=True,
+        )
 
-        st.markdown('<div class="section-label">Land characteristics</div>', unsafe_allow_html=True)
-        st.markdown("""
-        <div class="stat-grid">
-            <div><b>NaN</b><span>Elevation</span></div>
-            <div><b>NaN</b><span>Mean slope</span></div>
-            <div><b>NaN</b><span>Forest cover</span></div>
-            <div><b>NaN</b><span>Agriculture</span></div>
-            <div><b>NaN</b><span>Built-up</span></div>
-            <div><b>NaN</b><span>Dist. to river</span></div>
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown("<div class='section-label'>Sub-scores (pending)</div>", unsafe_allow_html=True)
 
-        st.markdown('<div class="section-label" style="margin-top: 24px;">Priority actions preview</div>', unsafe_allow_html=True)
-        
-        if selected_district != "All Districts" and selected_theme != "All":
-            if not filtered_df.empty:
-                display_acts = filtered_df.head(3)
-                for _, row in display_acts.iterrows():
-                    tier_name = row['Clean_Tier']
-                    tier_col = tier_colors.get(tier_name, "var(--line)")
-                    pill_text = "TIER" if tier_name == "Unknown" else tier_name.split(" —")[0].upper()
-                    
-                    st.markdown(f"""
-                    <div class="action-item" style="border-left-color: {tier_col};">
-                        <div class="atxt">{row.get('Priority Action', 'N/A')}</div>
-                        <div class="tag-row">
-                            <span class="tag" style="background: {tier_col}; color: #fff; font-weight: 600;">{pill_text}</span>
-                            <span class="tag">{row['Clean_Theme']}</span>
-                            <span class="tag">{row['Clean_Pillar']}</span>
+        for label, color in [
+            ("Physical condition", COLORS["moss"]),
+            ("Vegetation condition", COLORS["sage"]),
+            ("Hydrological condition", COLORS["slate"]),
+            ("Anthropogenic pressure (inv.)", COLORS["brick"]),
+        ]:
+            st.markdown(
+                f"""
+                <div class="subscore">
+                    <div class="subscore-head"><span>{label}</span><b>NaN</b></div>
+                    <div class="subscore-track"><div style="width:0%;height:100%;background:{color};"></div></div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+        st.markdown("<div class='section-label'>Land characteristics</div>", unsafe_allow_html=True)
+        st.markdown(
+            """
+            <div class="stat-grid">
+                <div><div class="value">NaN</div><div class="label">Elevation</div></div>
+                <div><div class="value">NaN</div><div class="label">Mean slope</div></div>
+                <div><div class="value">NaN</div><div class="label">Forest cover</div></div>
+                <div><div class="value">NaN</div><div class="label">Agriculture</div></div>
+                <div><div class="value">NaN</div><div class="label">Built-up</div></div>
+                <div><div class="value">NaN</div><div class="label">Dist. to river</div></div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        st.markdown("<div class='section-label'>Priority actions preview</div>", unsafe_allow_html=True)
+
+        if selected_district == "All Districts" or st.session_state["theme_filter"] == "All":
+            st.markdown(
+                "<div class='subtle-note'>Select at least a district and an LCAT theme to view priority actions and community voices.</div>",
+                unsafe_allow_html=True,
+            )
+        else:
+            preview_df = df_gpdp.copy()
+            if not preview_df.empty:
+                if "State" in preview_df.columns:
+                    preview_df = preview_df[preview_df["State"] == selected_state]
+                if "District" in preview_df.columns:
+                    preview_df = preview_df[preview_df["District"] == selected_district]
+                if selected_block != "All Blocks" and "Block" in preview_df.columns:
+                    preview_df = preview_df[preview_df["Block"] == selected_block]
+                if selected_village != "All Villages" and "Panchayat/Village" in preview_df.columns:
+                    preview_df = preview_df[preview_df["Panchayat/Village"] == selected_village]
+                preview_df = preview_df[
+                    preview_df["Clean_Theme"] == st.session_state["theme_filter"]
+                ]
+                if st.session_state["tier_filter"] != "All":
+                    preview_df = preview_df[preview_df["Clean_Tier"] == st.session_state["tier_filter"]]
+                if st.session_state["pillar_filter"] != "All":
+                    preview_df = preview_df[preview_df["Clean_Pillar"] == st.session_state["pillar_filter"]]
+
+            if preview_df.empty:
+                st.markdown(
+                    "<div class='subtle-note'>No actions match the current filters.</div>",
+                    unsafe_allow_html=True,
+                )
+            else:
+                for _, row in preview_df.head(4).iterrows():
+                    tier = row["Clean_Tier"]
+                    tclass = {
+                        "Tier 1 — Community Led": "t1",
+                        "Tier 2 — Minor Support": "t2",
+                        "Tier 3 — External Support & Convergence": "t3",
+                    }.get(tier, "")
+
+                    action_text = normalize_text(row.get("Priority Action", ""))
+                    pillar = normalize_text(row.get("Clean_Pillar", ""))
+                    st.markdown(
+                        f"""
+                        <div class="action-preview {tclass}">
+                            <div class="text">{html.escape(action_text)}</div>
+                            <div class="tag-row">
+                                <span class="tag {tclass}">{html.escape(tier)}</span>
+                                <span class="tag">{html.escape(st.session_state['theme_filter'])}</span>
+                                <span class="tag">{html.escape(pillar)}</span>
+                            </div>
                         </div>
-                    </div>
-                    """, unsafe_allow_html=True)
-                
-                if len(filtered_df) > 3:
-                    if st.button("See more actions & community voices"):
-                        show_theme_overlay(selected_theme, selected_state, selected_district, selected_village, raw_gpdp_df)
-            else:
-                st.markdown("<div style='color: var(--ink-soft); font-size: 12.5px;'>No actions match the current filters.</div>", unsafe_allow_html=True)
-        else:
-            st.markdown("""
-            <div style="background: var(--paper-deep); padding: 12px; border-radius: 8px; font-size: 12.5px; color: var(--ink-soft); text-align: center;">
-                Select a <b>District</b> and an <b>LCAT Theme</b> to view specific priority actions and community voices.
-            </div>
-            """, unsafe_allow_html=True)
-
-    # -------------------------------------------------------------------------
-    # LOWER ANALYTICS (Filtered by Geo ONLY, not Theme/Tier)
-    # -------------------------------------------------------------------------
-    st.markdown("<hr style='border-color: var(--line); margin: 40px 0;'>", unsafe_allow_html=True)
-    
-    st.markdown("<h3 style='text-align:center; font-family: Space Grotesk;'>Analytical Summary</h3>", unsafe_allow_html=True)
-    st.markdown("<p style='text-align:center; color: var(--ink-soft); font-size: 13px; margin-bottom: 30px;'>Distribution of implementation tiers across landscape themes and pillars</p>", unsafe_allow_html=True)
-    
-    col_a1, col_a2 = st.columns([1, 1], gap="large")
-    
-    geo_df = raw_gpdp_df.copy()
-    if not geo_df.empty:
-        if selected_state != "No Data": geo_df = geo_df[geo_df['State'] == selected_state]
-        if selected_district != "All Districts": geo_df = geo_df[geo_df['District'] == selected_district]
-        if selected_block != "All Blocks": geo_df = geo_df[geo_df['Block'] == selected_block]
-        if selected_village != "All Villages": geo_df = geo_df[geo_df['Panchayat/Village'] == selected_village]
-    
-    with col_a1:
-        if not geo_df.empty:
-            theme_tier_df = geo_df[geo_df['Clean_Tier'] != 'Unknown'].groupby(['Clean_Theme', 'Clean_Tier']).size().reset_index(name='Count')
-            if not theme_tier_df.empty:
-                theme_pivot = theme_tier_df.pivot(index='Clean_Theme', columns='Clean_Tier', values='Count').fillna(0)
-                theme_pivot['Total'] = theme_pivot.sum(axis=1)
-                plot_df_theme = theme_pivot.drop(columns=['Total']).reset_index().melt(id_vars='Clean_Theme', var_name='Tier', value_name='Count')
-                
-                fig_theme = make_subplots(rows=2, cols=4, specs=[[{'type': 'domain'}] * 4] * 2, subplot_titles=LCAT_ELEMENTS, vertical_spacing=0.15)
-                
-                for i, theme in enumerate(LCAT_ELEMENTS):
-                    r, c = (i // 4) + 1, (i % 4) + 1
-                    if theme in theme_pivot.index:
-                        tdata = plot_df_theme[(plot_df_theme['Clean_Theme'] == theme) & (plot_df_theme['Count'] > 0)]
-                        colors = [tier_colors.get(t, "#cbd5e1") for t in tdata['Tier']]
-                        fig_theme.add_trace(go.Pie(
-                            labels=tdata['Tier'], values=tdata['Count'], hole=0.68,
-                            title={'text': f"<b>{int(theme_pivot.loc[theme, 'Total'])}</b>", 'font': {'size': 14, 'color': '#20281F'}},
-                            marker=dict(colors=colors, line=dict(color='#F4F1E7', width=1.5)),
-                            textinfo='none', hoverinfo='label+percent+value', name=theme, sort=False
-                        ), row=r, col=c)
-                    else:
-                        fig_theme.add_trace(go.Pie(labels=['No Data'], values=[1], hole=0.68, title={'text': "0", 'font': {'size': 14, 'color': '#C9C2AC'}}, marker=dict(colors=['#DFDACB']), textinfo='none', hoverinfo='none', sort=False), row=r, col=c)
-                        
-                fig_theme.update_layout(
-                    title_text="Tiers across Themes", title_font=dict(size=15, color="#20281F", family="Space Grotesk"),
-                    plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)", font=dict(color="#20281F", size=11, family="IBM Plex Sans"),
-                    margin=dict(l=10, r=10, t=50, b=90), height=400, showlegend=False
-                )
-                
-                for annotation in fig_theme['layout']['annotations']:
-                    annotation['yanchor'] = 'top'
-                    annotation['y'] -= 0.48
-                    annotation['text'] = "<br>".join(textwrap.wrap(annotation['text'], width=22))
-                    annotation['font'] = dict(size=10.5, color="#4C5646", family="IBM Plex Mono")
-                    
-                if HAS_PLOTLY_EVENTS:
-                    clicked = plotly_events(fig_theme, click_event=True, hover_event=False, select_event=False, key="theme_chart", override_height=400)
-                    if clicked and len(clicked) > 0:
-                        curve_idx = clicked[0].get("curveNumber", -1)
-                        if 0 <= curve_idx < len(LCAT_ELEMENTS):
-                            show_theme_overlay(LCAT_ELEMENTS[curve_idx], selected_state, selected_district, selected_village, raw_gpdp_df)
-                else:
-                    st.plotly_chart(fig_theme, use_container_width=True, config={'displayModeBar': False})
-            else:
-                st.info("No tier data available for rings.")
-        else:
-            st.info("No data available.")
-
-    with col_a2:
-        if not geo_df.empty and 'Clean_Pillar' in geo_df.columns:
-            pillar_tier_df = geo_df[(geo_df['Clean_Tier'] != 'Unknown') & (geo_df['Clean_Pillar'] != 'Unknown')].groupby(['Clean_Pillar', 'Clean_Tier']).size().reset_index(name='Count')
-            if not pillar_tier_df.empty:
-                pillar_pivot = pillar_tier_df.pivot(index='Clean_Pillar', columns='Clean_Tier', values='Count').fillna(0)
-                pillar_pivot['Total'] = pillar_pivot.sum(axis=1)
-                plot_df_pillar = pillar_pivot.drop(columns=['Total']).reset_index().melt(id_vars='Clean_Pillar', var_name='Tier', value_name='Count')
-                
-                pillars_list = ["Adaptation", "Mitigation", "Restoration"]
-                fig_pillar = make_subplots(rows=1, cols=3, specs=[[{'type': 'domain'}] * 3], subplot_titles=pillars_list)
-                
-                for i, pillar in enumerate(pillars_list):
-                    if pillar in pillar_pivot.index:
-                        pdata = plot_df_pillar[(plot_df_pillar['Clean_Pillar'] == pillar) & (plot_df_pillar['Count'] > 0)]
-                        colors = [tier_colors.get(t, "#cbd5e1") for t in pdata['Tier']]
-                        fig_pillar.add_trace(go.Pie(
-                            labels=pdata['Tier'], values=pdata['Count'], hole=0.68,
-                            title={'text': f"<b>{int(pillar_pivot.loc[pillar, 'Total'])}</b>", 'font': {'size': 18, 'color': '#20281F'}},
-                            marker=dict(colors=colors, line=dict(color='#F4F1E7', width=2)),
-                            textinfo='none', hoverinfo='label+percent+value', name=pillar, sort=False
-                        ), row=1, col=i+1)
-                    else:
-                        fig_pillar.add_trace(go.Pie(labels=['No Data'], values=[1], hole=0.68, title={'text': "0", 'font': {'size': 18, 'color': '#C9C2AC'}}, marker=dict(colors=['#DFDACB']), textinfo='none', hoverinfo='none', sort=False), row=1, col=i+1)
-                        
-                fig_pillar.update_layout(
-                    title_text="Tiers across Pillars", title_font=dict(size=15, color="#20281F", family="Space Grotesk"),
-                    plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)", font=dict(color="#20281F", size=11, family="IBM Plex Sans"),
-                    margin=dict(l=10, r=10, t=50, b=90), height=250, showlegend=True,
-                    legend=dict(orientation="h", yanchor="top", y=-0.3, xanchor="center", x=0.5, font=dict(color="#4C5646", family="IBM Plex Mono"), title="")
-                )
-                
-                for annotation in fig_pillar['layout']['annotations']:
-                    annotation['yanchor'] = 'top'
-                    annotation['y'] -= 1.05
-                    annotation['font'] = dict(size=11, color="#4C5646", family="IBM Plex Mono")
-                    
-                st.plotly_chart(fig_pillar, use_container_width=True, config={'displayModeBar': False})
-                
-        # District Trajectory (Pie charts only)
-        st.markdown("<h4 style='margin-top: 20px; font-family: Space Grotesk;'>District LCAT Landscape Trajectory</h4>", unsafe_allow_html=True)
-        
-        file_path = "data/District Wise LCAT.xlsx"
-        if os.path.exists(file_path):
-            try:
-                traj_df = pd.read_excel(file_path)
-                dist_col = next((c for c in traj_df.columns if 'district' in str(c).lower()), None)
-                if dist_col: traj_df = traj_df.rename(columns={dist_col: "District"})
-                
-                if selected_district != "All Districts":
-                    filtered_traj = traj_df[traj_df["District"] == selected_district]
-                else:
-                    filtered_traj = traj_df[traj_df["District"].isin(dist_options)] if selected_state != "No Data" else traj_df.copy()
-                    
-                if not filtered_traj.empty:
-                    valid_themes = [t for t in traj_df.columns if t in LCAT_ELEMENTS]
-                    if not valid_themes: valid_themes = [c for c in traj_df.columns if c not in ["District", "State"]]
-                    
-                    status_colors = {"Improving": "var(--sage)", "Stable": "var(--slate)", "Mixed": "var(--ochre)", "Declining": "var(--brick)", "Unknown": "var(--paper-deep)"}
-                    
-                    fig_traj = make_subplots(rows=2, cols=4, specs=[[{'type': 'domain'}] * 4] * 2, subplot_titles=valid_themes, vertical_spacing=0.2)
-                    for i, theme in enumerate(valid_themes):
-                        r, c = (i // 4) + 1, (i % 4) + 1
-                        if theme in filtered_traj.columns:
-                            counts = filtered_traj[theme].astype(str).str.strip().value_counts().reset_index()
-                            counts.columns = ["Status", "Count"]
-                            colors = [status_colors.get(s, status_colors["Unknown"]) for s in counts["Status"]]
-                            
-                            fig_traj.add_trace(go.Pie(
-                                labels=counts["Status"], values=counts["Count"], hole=0.65,
-                                title={'text': f"<b>{len(filtered_traj)}</b>", 'font': {'size': 14, 'color': '#20281F'}},
-                                marker=dict(colors=colors, line=dict(color='#F4F1E7', width=1.5)),
-                                textinfo='none', hoverinfo='label+value', name=theme, sort=False
-                            ), row=r, col=c)
-                        else:
-                            fig_traj.add_trace(go.Pie(labels=['Unavailable'], values=[1], hole=0.65, title={'text': "0", 'font': {'size': 14, 'color': '#C9C2AC'}}, marker=dict(colors=['#DFDACB']), textinfo='none', hoverinfo='none', sort=False), row=r, col=c)
-
-                    fig_traj.update_layout(
-                        plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)", font=dict(color="#20281F", size=11, family="IBM Plex Sans"),
-                        margin=dict(l=10, r=10, t=30, b=40), height=300, showlegend=True,
-                        legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5, font=dict(color="#4C5646", family="IBM Plex Mono"))
+                        """,
+                        unsafe_allow_html=True,
                     )
-                    for annotation in fig_traj['layout']['annotations']:
-                        annotation['y'] -= 0.6
-                        annotation['text'] = "<br>".join(textwrap.wrap(annotation['text'], width=16))
-                        annotation['font'] = dict(size=10.5, color="#4C5646", family="IBM Plex Mono")
-                        
-                    st.plotly_chart(fig_traj, use_container_width=True, config={'displayModeBar': False})
+
+                if st.button("See more", key="see_more_theme", width="stretch"):
+                    show_theme_overlay(
+                        st.session_state["theme_filter"],
+                        selected_state,
+                        selected_district,
+                        selected_village,
+                    )
+
+        st.markdown("<div class='section-label'>Recommended focus</div>", unsafe_allow_html=True)
+        st.markdown(
+            "<span class='focus-pill muted'>NaN</span>"
+            "<span class='focus-pill muted'>Recommendations require scores</span>",
+            unsafe_allow_html=True,
+        )
+
+    # -------------------------------------------------------------------------
+    # ANALYTICAL SUMMARY
+    # -------------------------------------------------------------------------
+    st.markdown(
+        """
+        <div class="analytical-heading">
+            <h2>Analytical Summary</h2>
+            <p>Distribution of implementation tiers across landscape themes and pillars</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    # Recompute filtered action data once for analytics.
+    analytics_df = df_gpdp.copy()
+    if not analytics_df.empty:
+        if selected_state != "Unknown" and "State" in analytics_df.columns:
+            analytics_df = analytics_df[analytics_df["State"] == selected_state]
+        if selected_district != "All Districts" and "District" in analytics_df.columns:
+            analytics_df = analytics_df[analytics_df["District"] == selected_district]
+        if selected_block != "All Blocks" and "Block" in analytics_df.columns:
+            analytics_df = analytics_df[analytics_df["Block"] == selected_block]
+        if selected_village != "All Villages" and "Panchayat/Village" in analytics_df.columns:
+            analytics_df = analytics_df[analytics_df["Panchayat/Village"] == selected_village]
+
+    # -------------------------------------------------------------------------
+    # LCAT THEME RINGS
+    # -------------------------------------------------------------------------
+    theme_panel, pillar_panel = st.columns([1.15, 1.0], gap="large")
+
+    with theme_panel:
+        st.markdown("<div class='card'>", unsafe_allow_html=True)
+        st.markdown("<div class='chart-title'>Tiers across Themes</div>", unsafe_allow_html=True)
+
+        theme_counts = (
+            analytics_df[analytics_df["Clean_Tier"] != "Unknown"]
+            .groupby(["Clean_Theme", "Clean_Tier"])
+            .size()
+            .reset_index(name="Count")
+            if not analytics_df.empty else pd.DataFrame()
+        )
+
+        theme_pivot = (
+            theme_counts.pivot(index="Clean_Theme", columns="Clean_Tier", values="Count").fillna(0)
+            if not theme_counts.empty else pd.DataFrame()
+        )
+
+        ring_cols = st.columns(4)
+        for i, theme in enumerate(LCAT_ELEMENTS):
+            with ring_cols[i % 4]:
+                if i == 4:
+                    st.markdown("<div style='height:10px;'></div>", unsafe_allow_html=True)
+
+                counts = {}
+                total = 0
+                if theme in theme_pivot.index:
+                    row = theme_pivot.loc[theme]
+                    for tier_name in TIER_COLORS:
+                        counts[tier_name] = int(row.get(tier_name, 0))
+                    total = sum(counts.values())
+
+                if total > 0:
+                    labels = [k for k, v in counts.items() if v > 0]
+                    values = [counts[k] for k in labels]
+                    colors = [TIER_COLORS[k] for k in labels]
                 else:
-                    st.info("No trajectory data available for selection.")
-            except Exception:
-                st.info("Error reading trajectory file.")
+                    labels = ["No Data"]
+                    values = [1]
+                    colors = [COLORS["paper_deep"]]
+
+                fig = go.Figure(
+                    go.Pie(
+                        labels=labels,
+                        values=values,
+                        hole=0.68,
+                        textinfo="none",
+                        hoverinfo="label+value+percent" if total > 0 else "none",
+                        marker=dict(
+                            colors=colors,
+                            line=dict(color=COLORS["white"], width=1.5),
+                        ),
+                        sort=False,
+                    )
+                )
+                fig.update_layout(
+                    height=145,
+                    margin=dict(l=0, r=0, t=6, b=0),
+                    paper_bgcolor="rgba(0,0,0,0)",
+                    plot_bgcolor="rgba(0,0,0,0)",
+                    showlegend=False,
+                    annotations=[
+                        dict(
+                            text=f"<b>{total}</b>",
+                            x=0.5,
+                            y=0.5,
+                            xanchor="center",
+                            yanchor="middle",
+                            showarrow=False,
+                            font=dict(
+                                size=16,
+                                color=COLORS["ink"] if total > 0 else "#9FA7B0",
+                            ),
+                        )
+                    ],
+                )
+
+                if HAS_PLOTLY_EVENTS:
+                    clicked = plotly_events(
+                        fig,
+                        click_event=True,
+                        hover_event=False,
+                        select_event=False,
+                        key=f"theme_click_{i}",
+                        override_height=145,
+                        override_width="100%",
+                    )
+                    if clicked:
+                        show_theme_overlay(
+                            theme,
+                            selected_state,
+                            selected_district,
+                            selected_village,
+                        )
+                else:
+                    st.plotly_chart(
+                        fig,
+                        width="stretch",
+                        config={"displayModeBar": False},
+                    )
+
+                wrapped = "<br>".join(textwrap.wrap(theme, width=20))
+                st.markdown(
+                    f"<div class='theme-label'>{wrapped}</div>",
+                    unsafe_allow_html=True,
+                )
+
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    # -------------------------------------------------------------------------
+    # PILLAR RINGS
+    # -------------------------------------------------------------------------
+    with pillar_panel:
+        st.markdown("<div class='card'>", unsafe_allow_html=True)
+        st.markdown("<div class='chart-title'>Tiers across Pillars</div>", unsafe_allow_html=True)
+
+        pillar_counts = (
+            analytics_df[
+                (analytics_df["Clean_Tier"] != "Unknown") &
+                (analytics_df["Clean_Pillar"] != "Unknown")
+            ]
+            .groupby(["Clean_Pillar", "Clean_Tier"])
+            .size()
+            .reset_index(name="Count")
+            if not analytics_df.empty else pd.DataFrame()
+        )
+
+        pillar_pivot = (
+            pillar_counts.pivot(index="Clean_Pillar", columns="Clean_Tier", values="Count").fillna(0)
+            if not pillar_counts.empty else pd.DataFrame()
+        )
+
+        pillar_cols = st.columns(3)
+        for i, pillar in enumerate(PILLARS):
+            with pillar_cols[i]:
+                counts = {}
+                total = 0
+                if pillar in pillar_pivot.index:
+                    row = pillar_pivot.loc[pillar]
+                    for tier_name in TIER_COLORS:
+                        counts[tier_name] = int(row.get(tier_name, 0))
+                    total = sum(counts.values())
+
+                if total > 0:
+                    labels = [k for k, v in counts.items() if v > 0]
+                    values = [counts[k] for k in labels]
+                    colors = [TIER_COLORS[k] for k in labels]
+                else:
+                    labels = ["No Data"]
+                    values = [1]
+                    colors = [COLORS["paper_deep"]]
+
+                fig = go.Figure(
+                    go.Pie(
+                        labels=labels,
+                        values=values,
+                        hole=0.68,
+                        textinfo="none",
+                        hoverinfo="label+value+percent" if total > 0 else "none",
+                        marker=dict(
+                            colors=colors,
+                            line=dict(color=COLORS["white"], width=1.5),
+                        ),
+                        sort=False,
+                    )
+                )
+                fig.update_layout(
+                    height=155,
+                    margin=dict(l=0, r=0, t=6, b=0),
+                    paper_bgcolor="rgba(0,0,0,0)",
+                    plot_bgcolor="rgba(0,0,0,0)",
+                    showlegend=False,
+                    annotations=[
+                        dict(
+                            text=f"<b>{total}</b>",
+                            x=0.5,
+                            y=0.5,
+                            xanchor="center",
+                            yanchor="middle",
+                            showarrow=False,
+                            font=dict(size=17, color=COLORS["ink"]),
+                        )
+                    ],
+                )
+                st.plotly_chart(
+                    fig,
+                    width="stretch",
+                    config={"displayModeBar": False},
+                )
+                st.markdown(
+                    f"<div class='theme-label' style='min-height:24px;'>{html.escape(pillar)}</div>",
+                    unsafe_allow_html=True,
+                )
+
+        # Shared tier legend.
+        legend_html = "".join(
+            f"<span><i class='legend-dot' style='background:{color};'></i>{html.escape(name)}</span>"
+            for name, color in TIER_COLORS.items()
+        )
+        st.markdown(
+            f"<div class='tier-legend' style='justify-content:center;margin-top:6px;'>{legend_html}</div>",
+            unsafe_allow_html=True,
+        )
+
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    # -------------------------------------------------------------------------
+    # DISTRICT TRAJECTORY
+    # -------------------------------------------------------------------------
+    st.markdown("<div style='height:26px;'></div>", unsafe_allow_html=True)
+    st.markdown(
+        "<div class='analytical-heading' style='margin-top:8px;'>"
+        "<h2>District LCAT Landscape Trajectory</h2>"
+        "<p>Improving, declining, mixed or stable by LCAT theme</p>"
+        "</div>",
+        unsafe_allow_html=True,
+    )
+
+    trajectory_df = load_trajectory_data()
+
+    if selected_district == "All Districts":
+        st.info("Select a district to view the trajectory status of all 8 LCAT themes.")
+    elif trajectory_df.empty or "District" not in trajectory_df.columns:
+        st.info("No District Wise LCAT trajectory data is available.")
+    else:
+        one = trajectory_df[trajectory_df["District"] == selected_district]
+
+        if one.empty:
+            st.info(f"No trajectory data available for {selected_district}.")
         else:
-            st.info("Trajectory file not found in data/.")
+            row = one.iloc[0]
 
-# -----------------------------------------------------------------------------
-# CLIMATE SIGNALS DASHBOARD MODE
-# -----------------------------------------------------------------------------
-elif dashboard_mode == "Climate Signals":
-    df_climate = load_climate_data()
-    avail_clim_states = df_climate["state"].dropna().unique().tolist() if not df_climate.empty else ["No Data"]
-    
-    st.markdown("""
-    <div class="lcat-header">
-      <div class="brand"><b>CLIMATE SIGNALS</b><span>VULNERABILITY & THERMAL STRESS</span></div>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    st.markdown("<br>", unsafe_allow_html=True)
-    c_left, c_right = st.columns([1, 4])
-    
-    with c_left:
-        st.markdown('<div class="section-label">Geographic selection</div>', unsafe_allow_html=True)
-        selected_clim_state = st.selectbox("State", avail_clim_states, key="clim_state")
-        df_state = df_climate[df_climate["state"] == selected_clim_state] if not df_climate.empty else df_climate
-        clim_dist_opts = ["All Districts"] + df_state["district"].dropna().unique().tolist() if not df_state.empty else ["All Districts"]
-        selected_clim_dist = st.selectbox("District", clim_dist_opts, key="clim_dist")
+            traj_cols = st.columns(4)
+            for idx, theme in enumerate(LCAT_ELEMENTS):
+                with traj_cols[idx % 4]:
+                    status = normalize_text(row.get(theme, "Unknown"))
+                    if status not in STATUS_COLORS:
+                        status = "Unknown"
 
-    ndmi_colors = {"Severe Canopy Desiccation": "var(--brick)", "Moisture Loss": "var(--ochre)", "Stable": "var(--paper-deep)", "Moisture Gain": "var(--slate)", "Little or No Change": "var(--paper-deep)"}
-    lst_colors = {"Severe Warming": "var(--brick)", "Moderate Warming": "var(--ochre)", "Stable": "var(--paper-deep)", "Cooling Trend": "var(--slate)", "Little or No Change": "var(--paper-deep)"}
+                    # Use a compact single-colour ring for a district's status.
+                    fig = go.Figure(
+                        go.Pie(
+                            labels=[status],
+                            values=[1],
+                            hole=0.72,
+                            textinfo="none",
+                            hovertemplate=f"<b>{theme}</b><br>Status: {status}<extra></extra>",
+                            marker=dict(
+                                colors=[STATUS_COLORS[status]],
+                                line=dict(color=COLORS["white"], width=1.5),
+                            ),
+                        )
+                    )
+                    fig.update_layout(
+                        height=130,
+                        margin=dict(l=0, r=0, t=4, b=0),
+                        paper_bgcolor="rgba(0,0,0,0)",
+                        plot_bgcolor="rgba(0,0,0,0)",
+                        showlegend=False,
+                    )
+                    st.plotly_chart(
+                        fig,
+                        width="stretch",
+                        config={"displayModeBar": False},
+                    )
 
-    with c_right:
-        if selected_clim_dist == "All Districts":
-            st.markdown("<h3 style='font-family: Space Grotesk;'>Climate Signals Overview</h3>", unsafe_allow_html=True)
-            if not df_state.empty:
-                col_ndmi, col_lst = st.columns(2)
-                with col_ndmi:
-                    st.markdown("##### NDMI Status Distribution")
-                    ndmi_counts = df_state['canopy_moisture_status'].value_counts().reset_index()
-                    ndmi_counts.columns = ['Status', 'Districts']
-                    fig_ndmi = px.pie(ndmi_counts, names='Status', values='Districts', hole=0.6, color='Status', color_discrete_map=ndmi_colors)
-                    fig_ndmi.update_layout(paper_bgcolor='rgba(0,0,0,0)', font=dict(family='IBM Plex Mono'), margin=dict(t=20, b=20, l=10, r=10), legend=dict(orientation="h", y=-0.2), height=350)
-                    st.plotly_chart(fig_ndmi, use_container_width=True, config={'displayModeBar': False})
-                    
-                with col_lst:
-                    st.markdown("##### LST Status Distribution")
-                    lst_counts = df_state['summer_lst_status'].value_counts().reset_index()
-                    lst_counts.columns = ['Status', 'Districts']
-                    fig_lst = px.pie(lst_counts, names='Status', values='Districts', hole=0.6, color='Status', color_discrete_map=lst_colors)
-                    fig_lst.update_layout(paper_bgcolor='rgba(0,0,0,0)', font=dict(family='IBM Plex Mono'), margin=dict(t=20, b=20, l=10, r=10), legend=dict(orientation="h", y=-0.2), height=350)
-                    st.plotly_chart(fig_lst, use_container_width=True, config={'displayModeBar': False})
-            else:
-                st.info("No climate data available for this state.")
+                    wrapped = "<br>".join(textwrap.wrap(theme, width=22))
+                    status_bg = STATUS_COLORS[status]
+                    fg = COLORS["white"] if status in ["Declining", "Stable", "Improving"] else "#241505"
+                    st.markdown(
+                        f"""
+                        <div class='theme-label'>{wrapped}</div>
+                        <div style='text-align:center;'>
+                            <span class='trajectory-status' style='background:{status_bg};color:{fg};'>
+                                {html.escape(status)}
+                            </span>
+                        </div>
+                        """,
+                        unsafe_allow_html=True,
+                    )
+
+            legend = " · ".join(
+                f"<span><i class='legend-dot' style='background:{STATUS_COLORS[s]};'></i>{s}</span>"
+                for s in ["Improving", "Stable", "Mixed", "Declining"]
+            )
+            st.markdown(
+                f"<div class='tier-legend' style='justify-content:center;margin-top:15px;'>{legend}</div>",
+                unsafe_allow_html=True,
+            )
+
+
+# =============================================================================
+# 12. CLIMATE SIGNALS MODE
+# =============================================================================
+else:
+    climate_df = load_climate_data()
+
+    st.markdown(
+        f"""
+        <div class="lcat-header">
+            <svg class="lcat-brandmark" viewBox="0 0 40 40" fill="none">
+                <circle cx="20" cy="20" r="17" stroke="#B9863E" stroke-width="2"/>
+                <circle cx="20" cy="20" r="11" stroke="#7E9767" stroke-width="2"/>
+                <circle cx="20" cy="20" r="5" stroke="#FCFBF6" stroke-width="2"/>
+            </svg>
+            <div class="lcat-brand">
+                <strong>LCAT</strong>
+                <small>LANDSCAPE CHARACTER ASSESSMENT TOOL</small>
+            </div>
+            <div style="margin-left:auto;font-family:'IBM Plex Mono';font-size:11px;color:#CBD4C4;">
+                CLIMATE SIGNALS
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    if climate_df.empty:
+        st.warning("Climate Signals dataset was not found in data/climate_vulnerability/.")
+    else:
+        climate_states = sorted(climate_df["state"].dropna().unique().tolist())
+        c1, c2 = st.columns([1.0, 1.2])
+
+        with c1:
+            climate_state = st.selectbox("State", climate_states, key="clim_state_new")
+
+        state_rows = climate_df[climate_df["state"] == climate_state]
+        climate_districts = ["All Districts"] + sorted(
+            state_rows["district"].dropna().unique().tolist()
+        )
+
+        with c2:
+            climate_district = st.selectbox(
+                "District",
+                climate_districts,
+                key="clim_dist_new",
+            )
+
+        st.markdown(
+            f"""
+            <div class="breadcrumb" style="margin:12px 0 0 0;">
+                <span>India</span><span class="sep">›</span>
+                <span>{html.escape(climate_state)}</span><span class="sep">›</span>
+                <span class="current">{html.escape(climate_district)}</span>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        ndmi_colors = {
+            "Severe Canopy Desiccation": "#8C4536",
+            "Moisture Loss": "#B9863E",
+            "Stable": "#DFDACB",
+            "Moisture Gain": "#3E6B78",
+            "Little or No Change": "#DFDACB",
+        }
+        lst_colors = {
+            "Severe Warming": "#8C4536",
+            "Moderate Warming": "#B9863E",
+            "Stable": "#DFDACB",
+            "Cooling Trend": "#3E6B78",
+            "Little or No Change": "#DFDACB",
+        }
+
+        if climate_district == "All Districts":
+            st.markdown(
+                "<div class='analytical-heading'><h2>Climate Signals Overview</h2>"
+                "<p>District-level distribution of canopy moisture and thermal stress status</p></div>",
+                unsafe_allow_html=True,
+            )
+
+            ndmi_counts = (
+                state_rows["canopy_moisture_status"]
+                .value_counts()
+                .reset_index()
+            )
+            ndmi_counts.columns = ["Status", "Districts"]
+
+            lst_counts = (
+                state_rows["summer_lst_status"]
+                .value_counts()
+                .reset_index()
+            )
+            lst_counts.columns = ["Status", "Districts"]
+
+            a, b = st.columns(2)
+
+            with a:
+                st.markdown("<div class='card'><h3 style='font-size:15px;'>NDMI Status Distribution</h3></div>", unsafe_allow_html=True)
+                fig = go.Figure(
+                    go.Pie(
+                        labels=ndmi_counts["Status"],
+                        values=ndmi_counts["Districts"],
+                        hole=0.62,
+                        marker=dict(
+                            colors=[ndmi_colors.get(x, COLORS["paper_deep"]) for x in ndmi_counts["Status"]],
+                            line=dict(color=COLORS["white"], width=2),
+                        ),
+                    )
+                )
+                fig.update_layout(
+                    height=330,
+                    margin=dict(l=0, r=0, t=5, b=10),
+                    paper_bgcolor="rgba(0,0,0,0)",
+                    showlegend=True,
+                    legend=dict(orientation="h", y=-0.15),
+                )
+                st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
+
+            with b:
+                st.markdown("<div class='card'><h3 style='font-size:15px;'>LST Status Distribution</h3></div>", unsafe_allow_html=True)
+                fig = go.Figure(
+                    go.Pie(
+                        labels=lst_counts["Status"],
+                        values=lst_counts["Districts"],
+                        hole=0.62,
+                        marker=dict(
+                            colors=[lst_colors.get(x, COLORS["paper_deep"]) for x in lst_counts["Status"]],
+                            line=dict(color=COLORS["white"], width=2),
+                        ),
+                    )
+                )
+                fig.update_layout(
+                    height=330,
+                    margin=dict(l=0, r=0, t=5, b=10),
+                    paper_bgcolor="rgba(0,0,0,0)",
+                    showlegend=True,
+                    legend=dict(orientation="h", y=-0.15),
+                )
+                st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
+
         else:
-            dist_row = df_state[df_state["district"] == selected_clim_dist]
-            if not dist_row.empty:
-                row = dist_row.iloc[0]
-                
-                k1, k2, k3, k4 = st.columns(4)
-                def render_metric(label, val, desc):
-                    return f"""
-                    <div style="background: var(--card); border: 1px solid var(--line); border-top: 3px solid var(--ochre); border-radius: 8px; padding: 18px;">
-                        <div style="font-family: 'IBM Plex Mono'; font-size: 10.5px; color: var(--ink-soft); text-transform: uppercase;">{label}</div>
-                        <div style="font-size: 1.6rem; font-weight: 700; color: var(--pine); font-family: 'Space Grotesk'; margin: 4px 0;">{val}</div>
-                        <div style="font-size: 11px; color: var(--ink-soft);">{desc}</div>
-                    </div>
-                    """
-                
-                with k1: st.markdown(render_metric("NDMI CHANGE", row.get('canopy_moisture_pct_change', 'N/A'), "Percentage Change"), unsafe_allow_html=True)
-                with k2: st.markdown(render_metric("NDMI STATUS", f"<span style='font-size:1.1rem;'>{row.get('canopy_moisture_status', 'N/A')}</span>", "Canopy Moisture"), unsafe_allow_html=True)
-                with k3: st.markdown(render_metric("LST CHANGE", f"{row.get('summer_lst_change_c', 'N/A')} °C", "Temperature Change"), unsafe_allow_html=True)
-                with k4: st.markdown(render_metric("LST STATUS", f"<span style='font-size:1.1rem;'>{row.get('summer_lst_status', 'N/A')}</span>", "Thermal Stress"), unsafe_allow_html=True)
-                
-                st.markdown("<br><hr style='border-color: var(--line);'>", unsafe_allow_html=True)
-                dist_clean = str(selected_clim_dist).lower().replace(' ', '_')
-                
-                st.markdown("<h3 style='font-family: Space Grotesk;'>Canopy Moisture — NDMI</h3>", unsafe_allow_html=True)
-                i1, i2, i3 = st.columns(3)
-                with i1:
-                    st.markdown("**2001–2010 Baseline**")
-                    path_b = f"data/climate_vulnerability/imagery/{dist_clean}_ndmi_baseline.png"
-                    if os.path.exists(path_b): st.image(path_b, use_container_width=True)
-                    else: st.info("Image not found")
-                with i2:
-                    st.markdown("**2015–2024 Recent**")
-                    path_r = f"data/climate_vulnerability/imagery/{dist_clean}_ndmi_recent.png"
-                    if os.path.exists(path_r): st.image(path_r, use_container_width=True)
-                    else: st.info("Image not found")
-                with i3:
-                    st.markdown("**Change**")
-                    path_c = f"data/climate_vulnerability/imagery/{dist_clean}_ndmi_change.png"
-                    if os.path.exists(path_c): st.image(path_c, use_container_width=True)
-                    else: st.info("Image not found")
-                    
-                st.markdown("""
-                <div style='text-align: center; font-size: 11px; padding: 10px; color: var(--ink-soft); font-family: IBM Plex Mono;'>
-                    🔴 <b>Red</b> → Moisture Loss / Drying &nbsp;&nbsp;&nbsp; ⚪ <b>White</b> → Little or No Change &nbsp;&nbsp;&nbsp; 🔵 <b>Blue</b> → Moisture Gain
-                </div>
-                """, unsafe_allow_html=True)
-                
-                st.markdown("<hr style='border-color: var(--line); margin: 32px 0;'>", unsafe_allow_html=True)
-                
-                st.markdown("<h3 style='font-family: Space Grotesk;'>Thermal Stress — LST</h3>", unsafe_allow_html=True)
-                l1, l2, l3 = st.columns(3)
-                with l1:
-                    st.markdown("**2001–2010 Baseline**")
-                    path_lb = f"data/climate_vulnerability/imagery/{dist_clean}_lst_baseline.png"
-                    if os.path.exists(path_lb): st.image(path_lb, use_container_width=True)
-                    else: st.info("Image not found")
-                with l2:
-                    st.markdown("**2015–2024 Recent**")
-                    path_lr = f"data/climate_vulnerability/imagery/{dist_clean}_lst_recent.png"
-                    if os.path.exists(path_lr): st.image(path_lr, use_container_width=True)
-                    else: st.info("Image not found")
-                with l3:
-                    st.markdown("**Change**")
-                    path_lc = f"data/climate_vulnerability/imagery/{dist_clean}_lst_change.png"
-                    if os.path.exists(path_lc): st.image(path_lc, use_container_width=True)
-                    else: st.info("Image not found")
-                    
-                st.markdown("""
-                <div style='text-align: center; font-size: 11px; padding: 10px; color: var(--ink-soft); font-family: IBM Plex Mono;'>
-                    🔵 <b>Blue</b> → Cooling &nbsp;&nbsp;&nbsp; ⚪ <b>White</b> → Little or No Change &nbsp;&nbsp;&nbsp; 🔴 <b>Red</b> → Warming
-                </div>
-                """, unsafe_allow_html=True)
-            else:
+            row_df = state_rows[state_rows["district"] == climate_district]
+
+            if row_df.empty:
                 st.warning("Data not found for the selected district.")
+            else:
+                row = row_df.iloc[0]
 
+                k1, k2, k3, k4 = st.columns(4)
+                cards = [
+                    (
+                        "NDMI STATUS",
+                        row.get("canopy_moisture_status", "N/A"),
+                        "Canopy Moisture",
+                    ),
+                    (
+                        "NDMI CHANGE",
+                        row.get("canopy_moisture_pct_change", "N/A"),
+                        "Percentage Change",
+                    ),
+                    (
+                        "LST STATUS",
+                        row.get("summer_lst_status", "N/A"),
+                        "Thermal Stress",
+                    ),
+                    (
+                        "LST CHANGE",
+                        f"{row.get('summer_lst_change_c', 'N/A')} °C",
+                        "Temperature Change",
+                    ),
+                ]
+
+                for col, (label, value, desc) in zip([k1, k2, k3, k4], cards):
+                    with col:
+                        st.markdown(
+                            f"""
+                            <div class="card">
+                                <div class="subtle-note">{label}</div>
+                                <div style="font-family:'IBM Plex Mono';font-size:20px;font-weight:600;color:{COLORS['ink']};margin:4px 0;">
+                                    {html.escape(str(value))}
+                                </div>
+                                <div style="font-size:10px;color:{COLORS['ink_soft']};">{desc}</div>
+                            </div>
+                            """,
+                            unsafe_allow_html=True,
+                        )
+
+                dist_clean = re.sub(r"[^a-z0-9]+", "_", str(climate_district).lower()).strip("_")
+
+                st.markdown("<div class='section-label'>Canopy Moisture — NDMI</div>", unsafe_allow_html=True)
+                ndmi_cols = st.columns(3)
+                ndmi_files = [
+                    ("2001–2010 Baseline", f"data/climate_vulnerability/imagery/{dist_clean}_ndmi_baseline.png"),
+                    ("2015–2024 Recent", f"data/climate_vulnerability/imagery/{dist_clean}_ndmi_recent.png"),
+                    ("Change", f"data/climate_vulnerability/imagery/{dist_clean}_ndmi_change.png"),
+                ]
+                for col, (label, path) in zip(ndmi_cols, ndmi_files):
+                    with col:
+                        st.markdown(f"**{label}**")
+                        if os.path.exists(path):
+                            st.image(path, width="stretch")
+                        else:
+                            st.info(f"Image not found: {os.path.basename(path)}")
+
+                st.markdown(
+                    f"""
+                    <div class="card" style="margin-top:10px;">
+                        <b>Baseline:</b> {html.escape(str(row.get('canopy_moisture_baseline', 'N/A')))}
+                        &nbsp;|&nbsp; <b>Recent:</b> {html.escape(str(row.get('canopy_moisture_recent', 'N/A')))}
+                        &nbsp;|&nbsp; <b>Absolute Change:</b> {html.escape(str(row.get('canopy_moisture_change', 'N/A')))}
+                        &nbsp;|&nbsp; <b>Status:</b> {html.escape(str(row.get('canopy_moisture_status', 'N/A')))}
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+
+                st.markdown("<div class='section-label'>Thermal Stress — LST</div>", unsafe_allow_html=True)
+                lst_cols = st.columns(3)
+                lst_files = [
+                    ("2001–2010 Baseline", f"data/climate_vulnerability/imagery/{dist_clean}_lst_baseline.png"),
+                    ("2015–2024 Recent", f"data/climate_vulnerability/imagery/{dist_clean}_lst_recent.png"),
+                    ("Change", f"data/climate_vulnerability/imagery/{dist_clean}_lst_change.png"),
+                ]
+                for col, (label, path) in zip(lst_cols, lst_files):
+                    with col:
+                        st.markdown(f"**{label}**")
+                        if os.path.exists(path):
+                            st.image(path, width="stretch")
+                        else:
+                            st.info(f"Image not found: {os.path.basename(path)}")
+
+                st.markdown(
+                    f"""
+                    <div class="card" style="margin-top:10px;">
+                        <b>Baseline:</b> {html.escape(str(row.get('summer_lst_baseline_c', 'N/A')))} °C
+                        &nbsp;|&nbsp; <b>Recent:</b> {html.escape(str(row.get('summer_lst_recent_c', 'N/A')))} °C
+                        &nbsp;|&nbsp; <b>Change:</b> {html.escape(str(row.get('summer_lst_change_c', 'N/A')))} °C
+                        &nbsp;|&nbsp; <b>Status:</b> {html.escape(str(row.get('summer_lst_status', 'N/A')))}
+                        <br><br>
+                        <b>Extreme Heat Days:</b>
+                        Baseline {html.escape(str(row.get('extreme_heat_days_baseline', 'N/A')))}
+                        · Recent {html.escape(str(row.get('extreme_heat_days_recent', 'N/A')))}
+                        · Change {html.escape(str(row.get('extreme_heat_days_change', 'N/A')))}
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+
+                with st.expander("Methodology & Data Sources"):
+                    st.markdown(
+                        """
+**Canopy Moisture (NDMI)**
+- Source: MODIS MOD09A1
+- Resolution: 500 m
+- Season: October–November
+- Baseline: 2001–2010
+- Recent: 2015–2024
+
+**Thermal Stress (LST)**
+- Source: MODIS MOD11A1
+- Resolution: 1 km
+- Season: May–June
+- Baseline: 2001–2010
+- Recent: 2015–2024
+"""
+                    )
