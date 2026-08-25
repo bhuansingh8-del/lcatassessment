@@ -629,19 +629,26 @@ def normalize_theme(value: Any) -> str:
     if pd.isna(value):
         return "Unknown"
 
-    v = str(value).strip()
-    v = re.sub(r"^\s*\d+\s*[\)\.\-:]\s*", "", v)
-    v = re.sub(r"\s+", " ", v).strip()
-    key = v.lower().replace("–", "-").replace("—", "-")
+    v = str(value).lower()
+    
+    if "landform" in v or "topograph" in v:
+        return "Landform and topography"
+    if "hydro" in v or "water" in v:
+        return "Hydrology"
+    if "cover" in v or "agri" in v:
+        return "Land cover and Agriculture"
+    if "cultur" in v or "historic" in v:
+        return "Cultural and historical features"
+    if "visual" in v or "sensor" in v:
+        return "Visual and Sensory qualities"
+    if "wildlife" in v or "biodivers" in v:
+        return "Wildlife and Biodiversity richness"
+    if "infrastructur" in v or "econom" in v:
+        return "Infrastructure and Economic factors"
+    if "communit" in v or "govern" in v:
+        return "Community and Governance"
 
-    if key in LCAT_ALIASES:
-        return LCAT_ALIASES[key]
-
-    for alias, canonical in LCAT_ALIASES.items():
-        if alias in key or key in alias:
-            return canonical
-
-    return v if v in LCAT_ELEMENTS else "Unknown"
+    return "Unknown"
 
 
 def normalize_tier(value: Any) -> str:
@@ -1810,55 +1817,20 @@ if dashboard_mode == "LCAT & GPDP":
 
                         st.markdown(
                             f"""
-                                <div style="
-                                    background:#F4F1E7;
-                                    border:1px solid #C9C2AC;
-                                    border-radius:8px;
-                                    padding:12px 10px;
-                                    text-align:center;
-                                    display:flex;
-                                    flex-direction:column;
-                                    align-items:center;
-                                    justify-content:center;
-                                    min-height:85px;
-                                    margin-bottom:12px;
-                                ">
-                                    <div style="
-                                        font-family:'IBM Plex Mono',monospace;
-                                        font-size:10.5px;
-                                        line-height:1.3;
-                                        color:#4C5646;
-                                        margin-bottom:8px;
-                                        height:28px;
-                                        display:flex;
-                                        align-items:center;
-                                        justify-content:center;
-                                    ">
-                                        {html.escape(theme)}
-                                    </div>
-                                
-                                    <div style="
-                                        background:{style['bg']};
-                                        color:{style['color']};
-                                        border-radius:14px;
-                                        padding:4px 10px;
-                                        font-family:'IBM Plex Mono',monospace;
-                                        font-size:11px;
-                                        font-weight:600;
-                                        display:inline-flex;
-                                        align-items:center;
-                                        gap:4px;
-                                    ">
-                                        <span style="font-weight:700; font-size:13px;">{style['arrow']}</span>
-                                        {display_status}
-                                    </div>
-                                </div>
-                                """,
+<div style="background:#F4F1E7; border:1px solid #C9C2AC; border-radius:8px; padding:12px 10px; text-align:center; display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:85px; margin-bottom:12px;">
+<div style="font-family:'IBM Plex Mono',monospace; font-size:10.5px; line-height:1.3; color:#4C5646; margin-bottom:8px; height:28px; display:flex; align-items:center; justify-content:center;">
+{html.escape(theme)}
+</div>
+<div style="background:{style['bg']}; color:{style['color']}; border-radius:14px; padding:4px 10px; font-family:'IBM Plex Mono',monospace; font-size:11px; font-weight:600; display:inline-flex; align-items:center; gap:4px;">
+<span style="font-weight:700; font-size:13px;">{style['arrow']}</span>
+{display_status}
+</div>
+</div>
+""",
                             unsafe_allow_html=True,
                         )
             # Subtle spacer below trajectory section
             st.markdown("<div style='margin-bottom: 24px;'></div>", unsafe_allow_html=True)
-
 
 # =============================================================================
 # 12. CLIMATE SIGNALS MODE
