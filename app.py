@@ -928,6 +928,22 @@ def load_trajectory_data() -> pd.DataFrame:
 
 
 # =============================================================================
+# 6.5 PHYSICAL CONDITION DATA
+# =============================================================================
+@st.cache_data(show_spinner=False)
+def load_physical_condition_data() -> pd.DataFrame:
+    path = "data/physical_condition/physical_condition_scores.xlsx"
+    if not os.path.exists(path):
+        return pd.DataFrame()
+    try:
+        df = pd.read_excel(path)
+        return df
+    except Exception as exc:
+        st.warning(f"Could not read physical condition data: {exc}")
+        return pd.DataFrame()
+
+
+# =============================================================================
 # 7. MAP HELPERS
 # =============================================================================
 def get_demand_color(demand: int) -> str:
@@ -1193,6 +1209,7 @@ if "basemap_choice" not in st.session_state:
 # =============================================================================
 df_gpdp = load_gpdp_data()
 df_villages = build_village_summary(df_gpdp)
+df_physical = load_physical_condition_data()
 
 available_states = (
     sorted(df_villages["state"].dropna().unique().tolist())
@@ -1645,6 +1662,48 @@ if dashboard_mode == "LCAT & GPDP":
             """,
             unsafe_allow_html=True,
         )
+        
+        # Setup default physical and land values
+        phys_score_str = "NaN"
+        phys_score_pct = "0%"
+        phys_label_html = ""
+        elev_str = "NaN"
+        slope_str = "NaN"
+
+        if selected_village != "All Villages" and 'df_physical' in locals() and not df_physical.empty:
+            if all(c in df_physical.columns for c in ["state", "district", "block", "village"]):
+                phys_match = df_physical[
+                    (df_physical["state"] == selected_state) &
+                    (df_physical["district"] == selected_district) &
+                    (df_physical["block"] == selected_block) &
+                    (df_physical["village"] == selected_village)
+                ]
+                if not phys_match.empty:
+                    row_p = phys_match.iloc[0]
+                    if "physical_score" in row_p and pd.notna(row_p["physical_score"]):
+                        try:
+                            score_val = float(row_p["physical_score"])
+                            phys_score_str = f"{score_val:.2f}"
+                            phys_score_pct = f"{score_val * 100:.0f}%"
+                        except:
+                            pass
+                    
+                    if "physical_label" in row_p and pd.notna(row_p["physical_label"]):
+                        lbl = str(row_p["physical_label"]).strip()
+                        if lbl:
+                            phys_label_html = f" <span style='font-weight:normal;color:var(--ink-soft);font-size:10px;'>({html.escape(lbl)})</span>"
+                            
+                    if "elevation_mean_m" in row_p and pd.notna(row_p["elevation_mean_m"]):
+                        try:
+                            elev_str = f"{float(row_p['elevation_mean_m']):.1f} m"
+                        except:
+                            elev_str = str(row_p["elevation_mean_m"])
+                            
+                    if "mean_slope_deg" in row_p and pd.notna(row_p["mean_slope_deg"]):
+                        try:
+                            slope_str = f"{float(row_p['mean_slope_deg']):.1f}°"
+                        except:
+                            slope_str = str(row_p["mean_slope_deg"])
 
         # Condition-score placeholder: keep names/logic ready, values are NaN.
         st.markdown(
@@ -1668,11 +1727,20 @@ if dashboard_mode == "LCAT & GPDP":
             ("Hydrological condition", COLORS["slate"]),
             ("Anthropogenic pressure (inv.)", COLORS["brick"]),
         ]:
+            display_val = "NaN"
+            display_width = "0%"
+            display_extra = ""
+
+            if label == "Physical condition":
+                display_val = phys_score_str
+                display_width = phys_score_pct
+                display_extra = phys_label_html
+
             st.markdown(
                 f"""
                 <div class="subscore">
-                    <div class="subscore-head"><span>{label}</span><b>NaN</b></div>
-                    <div class="subscore-track"><div style="width:0%;height:100%;background:{color};"></div></div>
+                    <div class="subscore-head"><span>{label}</span><b>{display_val}{display_extra}</b></div>
+                    <div class="subscore-track"><div style="width:{display_width};height:100%;background:{color};"></div></div>
                 </div>
                 """,
                 unsafe_allow_html=True,
@@ -1680,10 +1748,10 @@ if dashboard_mode == "LCAT & GPDP":
 
         st.markdown("<div class='section-label'>Land characteristics</div>", unsafe_allow_html=True)
         st.markdown(
-            """
+            f"""
             <div class="stat-grid">
-                <div><div class="value">NaN</div><div class="label">Elevation</div></div>
-                <div><div class="value">NaN</div><div class="label">Mean slope</div></div>
+                <div><div class="value">{html.escape(elev_str)}</div><div class="label">Elevation</div></div>
+                <div><div class="value">{html.escape(slope_str)}</div><div class="label">Mean slope</div></div>
                 <div><div class="value">NaN</div><div class="label">Forest cover</div></div>
                 <div><div class="value">NaN</div><div class="label">Agriculture</div></div>
                 <div><div class="value">NaN</div><div class="label">Built-up</div></div>
