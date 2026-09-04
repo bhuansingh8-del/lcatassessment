@@ -847,21 +847,76 @@ DISTRICT_CENTERS = {
 # =============================================================================
 @st.cache_data(show_spinner=False)
 def load_physical_condition_data() -> pd.DataFrame:
-    path = "data/physical_condition/physical_condition_scores.csv"
-    if not os.path.exists(path):
-        return pd.DataFrame()
+    # Resolve relative to app.py, not the process working directory. This
+    # keeps the GitHub/Streamlit deployment from missing the repository data
+    # file when the current working directory differs.
+    app_dir = os.path.dirname(os.path.abspath(__file__))
+    csv_path = os.path.join(
+        app_dir,
+        "data",
+        "physical_condition",
+        "physical_condition_scores.csv",
+    )
+    xlsx_path = os.path.join(
+        app_dir,
+        "data",
+        "physical_condition",
+        "physical_condition_53_villages.xlsx",
+    )
 
     try:
-        df = pd.read_csv(path)
-        for col in ["state", "district", "block", "village", "physical_label"]:
+        if os.path.exists(csv_path):
+            df = pd.read_csv(csv_path)
+        elif os.path.exists(xlsx_path):
+            df = pd.read_excel(
+                xlsx_path,
+                sheet_name="Physical Scores",
+            )
+        else:
+            return pd.DataFrame()
+
+        # Make column matching resilient to header capitalization/spacing
+        # while preserving all existing dashboard behavior.
+        df.columns = [
+            str(c).strip().lower()
+            for c in df.columns
+        ]
+
+        for col in [
+            "state",
+            "district",
+            "block",
+            "village",
+            "physical_label",
+        ]:
             if col in df.columns:
-                df[col] = df[col].fillna("").astype(str).str.strip()
-        for col in ["physical_score", "elevation_mean_m", "mean_slope_deg"]:
+                df[col] = (
+                    df[col]
+                    .fillna("")
+                    .astype(str)
+                    .str.strip()
+                    .str.replace("Â·", "·", regex=False)
+                    .str.replace("–", "-", regex=False)
+                    .str.replace("—", "-", regex=False)
+                )
+
+        for col in [
+            "physical_score",
+            "elevation_mean_m",
+            "mean_slope_deg",
+        ]:
             if col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors="coerce")
+                df[col] = pd.to_numeric(
+                    df[col],
+                    errors="coerce",
+                )
+
         return df
+
     except Exception as exc:
-        st.warning(f"Could not read physical condition data: {exc}")
+        st.warning(
+            f"Could not read physical condition data: {exc}"
+        )
         return pd.DataFrame()
 
 
@@ -879,17 +934,29 @@ def get_physical_condition_record(
     if any(col not in df_physical.columns for col in required):
         return None
 
-    state = normalize_text(selected_state)
-    district = normalize_text(selected_district)
-    block = normalize_text(selected_block)
-    village = normalize_text(selected_village)
+    def _key(value: Any) -> str:
+        value = normalize_text(value)
+        value = value.replace("Â·", "·")
+        value = value.replace("–", "-").replace("—", "-")
+        value = re.sub(r"\s+", " ", value).strip()
+        return value.casefold()
+
+    state = _key(selected_state)
+    district = _key(selected_district)
+    block = _key(selected_block)
+    village = _key(selected_village)
+
+    physical_state = df_physical["state"].map(_key)
+    physical_district = df_physical["district"].map(_key)
+    physical_block = df_physical["block"].map(_key)
+    physical_village = df_physical["village"].map(_key)
 
     # Primary match: use the full geographic hierarchy.
     full = df_physical[
-        (df_physical["state"] == state)
-        & (df_physical["district"] == district)
-        & (df_physical["block"] == block)
-        & (df_physical["village"] == village)
+        (physical_state == state)
+        & (physical_district == district)
+        & (physical_block == block)
+        & (physical_village == village)
     ]
 
     if len(full) == 1:
@@ -898,14 +965,14 @@ def get_physical_condition_record(
     # Some downloaded physical-condition records do not carry district/block
     # metadata. In that case, use state + village only when that pair is unique.
     fallback = df_physical[
-        (df_physical["state"] == state)
-        & (df_physical["village"] == village)
+        (physical_state == state)
+        & (physical_village == village)
     ]
 
     if len(fallback) == 1:
         row = fallback.iloc[0]
-        row_district = normalize_text(row.get("district", ""))
-        row_block = normalize_text(row.get("block", ""))
+        row_district = _key(row.get("district", ""))
+        row_block = _key(row.get("block", ""))
         if (not row_district and not row_block) or (
             row_district == district and row_block == block
         ):
