@@ -846,6 +846,75 @@ DISTRICT_CENTERS = {
 # 4. CLIMATE SIGNALS DATA
 # =============================================================================
 @st.cache_data(show_spinner=False)
+def load_physical_condition_data() -> pd.DataFrame:
+    path = "data/physical_condition/physical_condition_scores.csv"
+    if not os.path.exists(path):
+        return pd.DataFrame()
+
+    try:
+        df = pd.read_csv(path)
+        for col in ["state", "district", "block", "village", "physical_label"]:
+            if col in df.columns:
+                df[col] = df[col].fillna("").astype(str).str.strip()
+        for col in ["physical_score", "elevation_mean_m", "mean_slope_deg"]:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors="coerce")
+        return df
+    except Exception as exc:
+        st.warning(f"Could not read physical condition data: {exc}")
+        return pd.DataFrame()
+
+
+def get_physical_condition_record(
+    df_physical: pd.DataFrame,
+    selected_state: str,
+    selected_district: str,
+    selected_block: str,
+    selected_village: str,
+) -> Optional[pd.Series]:
+    if df_physical.empty or selected_village == "All Villages":
+        return None
+
+    required = ["state", "district", "block", "village", "physical_score"]
+    if any(col not in df_physical.columns for col in required):
+        return None
+
+    state = normalize_text(selected_state)
+    district = normalize_text(selected_district)
+    block = normalize_text(selected_block)
+    village = normalize_text(selected_village)
+
+    # Primary match: use the full geographic hierarchy.
+    full = df_physical[
+        (df_physical["state"] == state)
+        & (df_physical["district"] == district)
+        & (df_physical["block"] == block)
+        & (df_physical["village"] == village)
+    ]
+
+    if len(full) == 1:
+        return full.iloc[0]
+
+    # Some downloaded physical-condition records do not carry district/block
+    # metadata. In that case, use state + village only when that pair is unique.
+    fallback = df_physical[
+        (df_physical["state"] == state)
+        & (df_physical["village"] == village)
+    ]
+
+    if len(fallback) == 1:
+        row = fallback.iloc[0]
+        row_district = normalize_text(row.get("district", ""))
+        row_block = normalize_text(row.get("block", ""))
+        if (not row_district and not row_block) or (
+            row_district == district and row_block == block
+        ):
+            return row
+
+    return None
+
+
+@st.cache_data(show_spinner=False)
 def load_climate_data() -> pd.DataFrame:
     path = "data/climate_vulnerability/climate_vulnerability_results.csv"
     if not os.path.exists(path):
@@ -924,22 +993,6 @@ def load_trajectory_data() -> pd.DataFrame:
         return df
     except Exception as exc:
         st.warning(f"Could not read District Wise LCAT.xlsx: {exc}")
-        return pd.DataFrame()
-
-
-# =============================================================================
-# 6.5 PHYSICAL CONDITION DATA
-# =============================================================================
-@st.cache_data(show_spinner=False)
-def load_physical_condition_data() -> pd.DataFrame:
-    path = "data/physical_condition/physical_condition_scores.xlsx"
-    if not os.path.exists(path):
-        return pd.DataFrame()
-    try:
-        df = pd.read_excel(path)
-        return df
-    except Exception as exc:
-        st.warning(f"Could not read physical condition data: {exc}")
         return pd.DataFrame()
 
 
@@ -1662,50 +1715,8 @@ if dashboard_mode == "LCAT & GPDP":
             """,
             unsafe_allow_html=True,
         )
-        
-        # Setup default physical and land values
-        phys_score_str = "NaN"
-        phys_score_pct = "0%"
-        phys_label_html = ""
-        elev_str = "NaN"
-        slope_str = "NaN"
 
-        if selected_village != "All Villages" and 'df_physical' in locals() and not df_physical.empty:
-            if all(c in df_physical.columns for c in ["state", "district", "block", "village"]):
-                phys_match = df_physical[
-                    (df_physical["state"] == selected_state) &
-                    (df_physical["district"] == selected_district) &
-                    (df_physical["block"] == selected_block) &
-                    (df_physical["village"] == selected_village)
-                ]
-                if not phys_match.empty:
-                    row_p = phys_match.iloc[0]
-                    if "physical_score" in row_p and pd.notna(row_p["physical_score"]):
-                        try:
-                            score_val = float(row_p["physical_score"])
-                            phys_score_str = f"{score_val:.2f}"
-                            phys_score_pct = f"{score_val * 100:.0f}%"
-                        except:
-                            pass
-                    
-                    if "physical_label" in row_p and pd.notna(row_p["physical_label"]):
-                        lbl = str(row_p["physical_label"]).strip()
-                        if lbl:
-                            phys_label_html = f" <span style='font-weight:normal;color:var(--ink-soft);font-size:10px;'>({html.escape(lbl)})</span>"
-                            
-                    if "elevation_mean_m" in row_p and pd.notna(row_p["elevation_mean_m"]):
-                        try:
-                            elev_str = f"{float(row_p['elevation_mean_m']):.1f} m"
-                        except:
-                            elev_str = str(row_p["elevation_mean_m"])
-                            
-                    if "mean_slope_deg" in row_p and pd.notna(row_p["mean_slope_deg"]):
-                        try:
-                            slope_str = f"{float(row_p['mean_slope_deg']):.1f}°"
-                        except:
-                            slope_str = str(row_p["mean_slope_deg"])
-
-        # Condition-score placeholder: keep names/logic ready, values are NaN.
+        # Condition-score placeholder: keep overall score pending; only Physical Condition is populated.
         st.markdown(
             """
             <div class="score-card">
@@ -1719,6 +1730,42 @@ if dashboard_mode == "LCAT & GPDP":
             unsafe_allow_html=True,
         )
 
+        physical_record = get_physical_condition_record(
+            df_physical,
+            selected_state,
+            selected_district,
+            selected_block,
+            selected_village,
+        )
+
+        physical_value = (
+            float(physical_record["physical_score"])
+            if physical_record is not None
+            and pd.notna(physical_record["physical_score"])
+            else np.nan
+        )
+
+        physical_display = (
+            f"{physical_value:.2f}"
+            if np.isfinite(physical_value)
+            else "NaN"
+        )
+
+        physical_width = (
+            max(0.0, min(100.0, physical_value * 100.0))
+            if np.isfinite(physical_value)
+            else 0.0
+        )
+
+        elevation_display = "NaN"
+        slope_display = "NaN"
+
+        if physical_record is not None:
+            if pd.notna(physical_record.get("elevation_mean_m", np.nan)):
+                elevation_display = f"{float(physical_record['elevation_mean_m']):.0f} m"
+            if pd.notna(physical_record.get("mean_slope_deg", np.nan)):
+                slope_display = f"{float(physical_record['mean_slope_deg']):.1f}°"
+
         st.markdown("<div class='section-label'>Sub-scores (pending)</div>", unsafe_allow_html=True)
 
         for label, color in [
@@ -1727,20 +1774,18 @@ if dashboard_mode == "LCAT & GPDP":
             ("Hydrological condition", COLORS["slate"]),
             ("Anthropogenic pressure (inv.)", COLORS["brick"]),
         ]:
-            display_val = "NaN"
-            display_width = "0%"
-            display_extra = ""
-
             if label == "Physical condition":
-                display_val = phys_score_str
-                display_width = phys_score_pct
-                display_extra = phys_label_html
+                value_display = physical_display
+                width = physical_width
+            else:
+                value_display = "NaN"
+                width = 0
 
             st.markdown(
                 f"""
                 <div class="subscore">
-                    <div class="subscore-head"><span>{label}</span><b>{display_val}{display_extra}</b></div>
-                    <div class="subscore-track"><div style="width:{display_width};height:100%;background:{color};"></div></div>
+                    <div class="subscore-head"><span>{label}</span><b>{value_display}</b></div>
+                    <div class="subscore-track"><div style="width:{width:.2f}%;height:100%;background:{color};"></div></div>
                 </div>
                 """,
                 unsafe_allow_html=True,
@@ -1750,8 +1795,8 @@ if dashboard_mode == "LCAT & GPDP":
         st.markdown(
             f"""
             <div class="stat-grid">
-                <div><div class="value">{html.escape(elev_str)}</div><div class="label">Elevation</div></div>
-                <div><div class="value">{html.escape(slope_str)}</div><div class="label">Mean slope</div></div>
+                <div><div class="value">{elevation_display}</div><div class="label">Elevation</div></div>
+                <div><div class="value">{slope_display}</div><div class="label">Mean slope</div></div>
                 <div><div class="value">NaN</div><div class="label">Forest cover</div></div>
                 <div><div class="value">NaN</div><div class="label">Agriculture</div></div>
                 <div><div class="value">NaN</div><div class="label">Built-up</div></div>
