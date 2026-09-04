@@ -973,7 +973,7 @@ def make_map(
     m = folium.Map(
         location=[center_lat, center_lng],
         zoom_start=zoom_start,
-        tiles=tile_dict.get(basemap_choice, "CartoDB positron"),
+        tiles=tile_dict.get(basemap_choice, "OpenStreetMap"),
         control_scale=True,
     )
 
