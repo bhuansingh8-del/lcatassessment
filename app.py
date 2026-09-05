@@ -938,45 +938,88 @@ def get_physical_condition_record(
         value = normalize_text(value)
         value = value.replace("Â·", "·")
         value = value.replace("–", "-").replace("—", "-")
-        value = re.sub(r"\s+", " ", value).strip()
-        return value.casefold()
+        value = value.casefold()
+        # For village matching, ignore harmless punctuation and spacing.
+        return re.sub(r"[^a-z0-9]", "", value)
 
     state = _key(selected_state)
-    district = _key(selected_district)
-    block = _key(selected_block)
     village = _key(selected_village)
 
     physical_state = df_physical["state"].map(_key)
-    physical_district = df_physical["district"].map(_key)
-    physical_block = df_physical["block"].map(_key)
     physical_village = df_physical["village"].map(_key)
 
-    # Primary match: use the full geographic hierarchy.
-    full = df_physical[
-        (physical_state == state)
-        & (physical_district == district)
-        & (physical_block == block)
-        & (physical_village == village)
+    # ------------------------------------------------------------------
+    # Village name is the primary key.
+    # First accept an exact normalized village-name match.
+    # ------------------------------------------------------------------
+    exact = df_physical[
+        physical_village == village
     ]
 
-    if len(full) == 1:
-        return full.iloc[0]
+    # If multiple villages share the same name, use State as the
+    # tie-breaker. District and Block are deliberately NOT required.
+    if len(exact) == 1:
+        return exact.iloc[0]
 
-    # Some downloaded physical-condition records do not carry district/block
-    # metadata. In that case, use state + village only when that pair is unique.
-    fallback = df_physical[
-        (physical_state == state)
-        & (physical_village == village)
-    ]
+    if len(exact) > 1:
+        same_state = exact[
+            physical_state == state
+        ]
+        if len(same_state) == 1:
+            return same_state.iloc[0]
 
-    if len(fallback) == 1:
-        row = fallback.iloc[0]
-        row_district = _key(row.get("district", ""))
-        row_block = _key(row.get("block", ""))
-        if (not row_district and not row_block) or (
-            row_district == district and row_block == block
-        ):
-            return row
+    # ------------------------------------------------------------------
+    # Fuzzy village-name matching for spelling / spacing variants.
+    # Search within the selected state first. This prevents a common
+    # village name in another state from being chosen when the state is
+    # known, while still allowing a valid match when district/block text
+    # differs between the two source datasets.
+    # ------------------------------------------------------------------
+    candidate_mask = (
+        physical_state == state
+    )
+
+    state_candidates = df_physical[
+        candidate_mask
+    ].copy()
+
+    def _similarity(candidate: str) -> float:
+        return difflib.SequenceMatcher(
+            None,
+            village,
+            _key(candidate),
+        ).ratio()
+
+    def _best_candidate(candidates: pd.DataFrame):
+        if candidates.empty:
+            return None, 0.0
+
+        scores = candidates["village"].map(
+            _similarity
+        )
+
+        best_idx = scores.idxmax()
+        best_score = float(scores.loc[best_idx])
+
+        return candidates.loc[best_idx], best_score
+
+    # Use the state-restricted list first.
+    best_row, best_score = _best_candidate(
+        state_candidates
+    )
+
+    # If State has no usable candidate, search the full physical table.
+    # State is still used as a tie-breaker when there are equally strong
+    # candidates rather than being a hard requirement.
+    if best_row is None:
+        best_row, best_score = _best_candidate(
+            df_physical
+        )
+
+    # Do not silently attach an unrelated village just because it is the
+    # numerically closest string.  Require a reasonably strong match.
+    if best_row is not None and best_score >= 0.80:
+        return best_row
 
     return None
 
