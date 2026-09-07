@@ -996,7 +996,133 @@ def load_climate_data() -> pd.DataFrame:
     except Exception as exc:
         st.error(f"Error reading climate CSV: {exc}")
         return pd.DataFrame()
+# -----------------------------------------------------------------------------
+# VEGETATION CONDITION DATA — integrated only into the existing sub-score.
+# The rest of the dashboard is intentionally unchanged.
+# -----------------------------------------------------------------------------
+@st.cache_data(show_spinner=False)
+def load_vegetation_condition_data() -> pd.DataFrame:
+    app_dir = os.path.dirname(os.path.abspath(__file__))
+    data_dir = os.path.join(app_dir, "data", "vegetation_condition")
 
+    if not os.path.isdir(data_dir):
+        return pd.DataFrame()
+
+    # Use the newest generated vegetation workbook in the data folder.
+    candidates = [
+        os.path.join(data_dir, name)
+        for name in os.listdir(data_dir)
+        if name.lower().endswith(".xlsx")
+        and name.lower().startswith("vegetation_condition_59_villages")
+    ]
+
+    if not candidates:
+        return pd.DataFrame()
+
+    path = max(candidates, key=os.path.getmtime)
+
+    try:
+        # The generated workbook has a title row above the real header.
+        df = pd.read_excel(path, sheet_name="Vegetation Results", header=1)
+        df.columns = [str(c).strip() for c in df.columns]
+
+        required = [
+            "State",
+            "District",
+            "Block",
+            "Village",
+            "Vegetation Status",
+            "Vegetation Score (0-100)",
+        ]
+        if any(col not in df.columns for col in required):
+            return pd.DataFrame()
+
+        for col in ["State", "District", "Block", "Village", "Vegetation Status"]:
+            df[col] = (
+                df[col]
+                .fillna("")
+                .astype(str)
+                .str.strip()
+                .str.replace("Â·", "·", regex=False)
+                .str.replace("–", "-", regex=False)
+                .str.replace("—", "-", regex=False)
+            )
+
+        df["Vegetation Score (0-100)"] = pd.to_numeric(
+            df["Vegetation Score (0-100)"],
+            errors="coerce",
+        )
+
+        return df
+
+    except Exception as exc:
+        st.warning(f"Could not read vegetation condition data: {exc}")
+        return pd.DataFrame()
+
+
+def get_vegetation_condition_record(
+    df_vegetation: pd.DataFrame,
+    selected_state: str,
+    selected_district: str,
+    selected_block: str,
+    selected_village: str,
+) -> Optional[pd.Series]:
+    if df_vegetation.empty or selected_village == "All Villages":
+        return None
+
+    required = [
+        "State",
+        "District",
+        "Block",
+        "Village",
+        "Vegetation Score (0-100)",
+    ]
+    if any(col not in df_vegetation.columns for col in required):
+        return None
+
+    def _key(value: Any) -> str:
+        value = normalize_text(value)
+        value = value.replace("Â·", "·")
+        value = value.replace("–", "-").replace("—", "-")
+        value = re.sub(r"\s+", " ", value).strip()
+        return value.casefold()
+
+    state = _key(selected_state)
+    district = _key(selected_district)
+    block = _key(selected_block)
+    village = _key(selected_village)
+
+    veg_state = df_vegetation["State"].map(_key)
+    veg_district = df_vegetation["District"].map(_key)
+    veg_block = df_vegetation["Block"].map(_key)
+    veg_village = df_vegetation["Village"].map(_key)
+
+    full = df_vegetation[
+        (veg_state == state)
+        & (veg_district == district)
+        & (veg_block == block)
+        & (veg_village == village)
+    ]
+
+    if len(full) == 1:
+        return full.iloc[0]
+
+    return None
+
+
+@st.cache_data(show_spinner=False)
+def load_climate_data() -> pd.DataFrame:
+    path = "data/climate_vulnerability/climate_vulnerability_results.csv"
+    if not os.path.exists(path):
+        return pd.DataFrame()
+
+    try:
+        df = pd.read_csv(path)
+        df.columns = df.columns.str.strip().str.lower()
+        return df
+    except Exception as exc:
+        st.error(f"Error reading climate CSV: {exc}")
+        return pd.DataFrame()
 
 # =============================================================================
 # 5. VERBATIM DATA
