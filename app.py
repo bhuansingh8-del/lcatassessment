@@ -843,6 +843,127 @@ DISTRICT_CENTERS = {
 
 
 # =============================================================================
+# 3A. VEGETATION CONDITION DATA
+# =============================================================================
+@st.cache_data(show_spinner=False)
+def load_vegetation_condition_data() -> pd.DataFrame:
+    # Resolve relative to app.py so the uploaded Excel file can live in
+    # data/vegetation_condition/ without changing the rest of the dashboard.
+    app_dir = os.path.dirname(os.path.abspath(__file__))
+    folder = os.path.join(app_dir, "data", "vegetation_condition")
+
+    if not os.path.isdir(folder):
+        return pd.DataFrame()
+
+    # Prefer the current 59-village vegetation workbook. If multiple generated
+    # versions exist, use the newest one by modification time.
+    candidates = [
+        os.path.join(folder, name)
+        for name in os.listdir(folder)
+        if name.lower().startswith("vegetation_condition_59_villages")
+        and name.lower().endswith(".xlsx")
+    ]
+    if not candidates:
+        return pd.DataFrame()
+
+    xlsx_path = max(candidates, key=os.path.getmtime)
+
+    try:
+        df = pd.read_excel(xlsx_path, sheet_name="Vegetation Results")
+        df.columns = [str(c).strip() for c in df.columns]
+
+        # Keep the dashboard's existing geography naming conventions while
+        # tolerating whitespace and the mojibake form of the middle dot.
+        for col in ["State", "District", "Block", "Village"]:
+            if col in df.columns:
+                df[col] = (
+                    df[col]
+                    .fillna("")
+                    .astype(str)
+                    .str.strip()
+                    .str.replace("Â·", "·", regex=False)
+                    .str.replace("–", "-", regex=False)
+                    .str.replace("—", "-", regex=False)
+                    .str.replace(r"\s+", " ", regex=True)
+                )
+
+        score_col = "Vegetation Score (0-100)"
+        if score_col not in df.columns:
+            return pd.DataFrame()
+
+        df[score_col] = pd.to_numeric(df[score_col], errors="coerce")
+        # The vegetation workbook stores the score on a 0-100 scale; the
+        # dashboard's sub-score convention is 0-1. Keep the original data
+        # untouched and derive only the dashboard-facing value here.
+        df["vegetation_score_01"] = df[score_col] / 100.0
+
+        return df
+    except Exception as exc:
+        st.warning(f"Could not read vegetation condition data: {exc}")
+        return pd.DataFrame()
+
+
+def get_vegetation_condition_record(
+    df_vegetation: pd.DataFrame,
+    selected_state: str,
+    selected_district: str,
+    selected_block: str,
+    selected_village: str,
+) -> Optional[pd.Series]:
+    if df_vegetation.empty or selected_village == "All Villages":
+        return None
+
+    required = ["State", "District", "Block", "Village", "vegetation_score_01"]
+    if any(col not in df_vegetation.columns for col in required):
+        return None
+
+    def _key(value: Any) -> str:
+        value = normalize_text(value)
+        value = value.replace("Â·", "·")
+        value = value.replace("–", "-").replace("—", "-")
+        value = re.sub(r"\s+", " ", value).strip()
+        return value.casefold()
+
+    state = _key(selected_state)
+    district = _key(selected_district)
+    block = _key(selected_block)
+    village = _key(selected_village)
+
+    vegetation_state = df_vegetation["State"].map(_key)
+    vegetation_district = df_vegetation["District"].map(_key)
+    vegetation_block = df_vegetation["Block"].map(_key)
+    vegetation_village = df_vegetation["Village"].map(_key)
+
+    # Primary match: full geographic hierarchy.
+    full = df_vegetation[
+        (vegetation_state == state)
+        & (vegetation_district == district)
+        & (vegetation_block == block)
+        & (vegetation_village == village)
+    ]
+
+    if len(full) == 1:
+        return full.iloc[0]
+
+    # Safe fallback for records where the hierarchy differs slightly.
+    fallback = df_vegetation[
+        (vegetation_state == state)
+        & (vegetation_village == village)
+    ]
+
+    if len(fallback) == 1:
+        row = fallback.iloc[0]
+        row_district = _key(row.get("District", ""))
+        row_block = _key(row.get("Block", ""))
+        if (row_district == district and row_block == block) or (
+            not row_district and not row_block
+        ):
+            return row
+
+    return None
+
+
+# =============================================================================
 # 4. CLIMATE SIGNALS DATA
 # =============================================================================
 @st.cache_data(show_spinner=False)
@@ -938,88 +1059,45 @@ def get_physical_condition_record(
         value = normalize_text(value)
         value = value.replace("Â·", "·")
         value = value.replace("–", "-").replace("—", "-")
-        value = value.casefold()
-        # For village matching, ignore harmless punctuation and spacing.
-        return re.sub(r"[^a-z0-9]", "", value)
+        value = re.sub(r"\s+", " ", value).strip()
+        return value.casefold()
 
     state = _key(selected_state)
+    district = _key(selected_district)
+    block = _key(selected_block)
     village = _key(selected_village)
 
     physical_state = df_physical["state"].map(_key)
+    physical_district = df_physical["district"].map(_key)
+    physical_block = df_physical["block"].map(_key)
     physical_village = df_physical["village"].map(_key)
 
-    # ------------------------------------------------------------------
-    # Village name is the primary key.
-    # First accept an exact normalized village-name match.
-    # ------------------------------------------------------------------
-    exact = df_physical[
-        physical_village == village
+    # Primary match: use the full geographic hierarchy.
+    full = df_physical[
+        (physical_state == state)
+        & (physical_district == district)
+        & (physical_block == block)
+        & (physical_village == village)
     ]
 
-    # If multiple villages share the same name, use State as the
-    # tie-breaker. District and Block are deliberately NOT required.
-    if len(exact) == 1:
-        return exact.iloc[0]
+    if len(full) == 1:
+        return full.iloc[0]
 
-    if len(exact) > 1:
-        same_state = exact[
-            physical_state == state
-        ]
-        if len(same_state) == 1:
-            return same_state.iloc[0]
+    # Some downloaded physical-condition records do not carry district/block
+    # metadata. In that case, use state + village only when that pair is unique.
+    fallback = df_physical[
+        (physical_state == state)
+        & (physical_village == village)
+    ]
 
-    # ------------------------------------------------------------------
-    # Fuzzy village-name matching for spelling / spacing variants.
-    # Search within the selected state first. This prevents a common
-    # village name in another state from being chosen when the state is
-    # known, while still allowing a valid match when district/block text
-    # differs between the two source datasets.
-    # ------------------------------------------------------------------
-    candidate_mask = (
-        physical_state == state
-    )
-
-    state_candidates = df_physical[
-        candidate_mask
-    ].copy()
-
-    def _similarity(candidate: str) -> float:
-        return difflib.SequenceMatcher(
-            None,
-            village,
-            _key(candidate),
-        ).ratio()
-
-    def _best_candidate(candidates: pd.DataFrame):
-        if candidates.empty:
-            return None, 0.0
-
-        scores = candidates["village"].map(
-            _similarity
-        )
-
-        best_idx = scores.idxmax()
-        best_score = float(scores.loc[best_idx])
-
-        return candidates.loc[best_idx], best_score
-
-    # Use the state-restricted list first.
-    best_row, best_score = _best_candidate(
-        state_candidates
-    )
-
-    # If State has no usable candidate, search the full physical table.
-    # State is still used as a tie-breaker when there are equally strong
-    # candidates rather than being a hard requirement.
-    if best_row is None:
-        best_row, best_score = _best_candidate(
-            df_physical
-        )
-
-    # Do not silently attach an unrelated village just because it is the
-    # numerically closest string.  Require a reasonably strong match.
-    if best_row is not None and best_score >= 0.80:
-        return best_row
+    if len(fallback) == 1:
+        row = fallback.iloc[0]
+        row_district = _key(row.get("district", ""))
+        row_block = _key(row.get("block", ""))
+        if (not row_district and not row_block) or (
+            row_district == district and row_block == block
+        ):
+            return row
 
     return None
 
@@ -1373,6 +1451,7 @@ if "basemap_choice" not in st.session_state:
 df_gpdp = load_gpdp_data()
 df_villages = build_village_summary(df_gpdp)
 df_physical = load_physical_condition_data()
+df_vegetation = load_vegetation_condition_data()
 
 available_states = (
     sorted(df_villages["state"].dropna().unique().tolist())
@@ -1867,6 +1946,33 @@ if dashboard_mode == "LCAT & GPDP":
             else 0.0
         )
 
+        vegetation_record = get_vegetation_condition_record(
+            df_vegetation,
+            selected_state,
+            selected_district,
+            selected_block,
+            selected_village,
+        )
+
+        vegetation_value = (
+            float(vegetation_record["vegetation_score_01"])
+            if vegetation_record is not None
+            and pd.notna(vegetation_record["vegetation_score_01"])
+            else np.nan
+        )
+
+        vegetation_display = (
+            f"{vegetation_value:.2f}"
+            if np.isfinite(vegetation_value)
+            else "NaN"
+        )
+
+        vegetation_width = (
+            max(0.0, min(100.0, vegetation_value * 100.0))
+            if np.isfinite(vegetation_value)
+            else 0.0
+        )
+
         elevation_display = "NaN"
         slope_display = "NaN"
 
@@ -1887,6 +1993,9 @@ if dashboard_mode == "LCAT & GPDP":
             if label == "Physical condition":
                 value_display = physical_display
                 width = physical_width
+            elif label == "Vegetation condition":
+                value_display = vegetation_display
+                width = vegetation_width
             else:
                 value_display = "NaN"
                 width = 0
