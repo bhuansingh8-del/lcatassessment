@@ -843,127 +843,6 @@ DISTRICT_CENTERS = {
 
 
 # =============================================================================
-# 3A. VEGETATION CONDITION DATA
-# =============================================================================
-@st.cache_data(show_spinner=False)
-def load_vegetation_condition_data() -> pd.DataFrame:
-    # Resolve relative to app.py so the uploaded Excel file can live in
-    # data/vegetation_condition/ without changing the rest of the dashboard.
-    app_dir = os.path.dirname(os.path.abspath(__file__))
-    folder = os.path.join(app_dir, "data", "vegetation_condition")
-
-    if not os.path.isdir(folder):
-        return pd.DataFrame()
-
-    # Prefer the current 59-village vegetation workbook. If multiple generated
-    # versions exist, use the newest one by modification time.
-    candidates = [
-        os.path.join(folder, name)
-        for name in os.listdir(folder)
-        if name.lower().startswith("vegetation_condition_59_villages")
-        and name.lower().endswith(".xlsx")
-    ]
-    if not candidates:
-        return pd.DataFrame()
-
-    xlsx_path = max(candidates, key=os.path.getmtime)
-
-    try:
-        df = pd.read_excel(xlsx_path, sheet_name="Vegetation Results")
-        df.columns = [str(c).strip() for c in df.columns]
-
-        # Keep the dashboard's existing geography naming conventions while
-        # tolerating whitespace and the mojibake form of the middle dot.
-        for col in ["State", "District", "Block", "Village"]:
-            if col in df.columns:
-                df[col] = (
-                    df[col]
-                    .fillna("")
-                    .astype(str)
-                    .str.strip()
-                    .str.replace("Â·", "·", regex=False)
-                    .str.replace("–", "-", regex=False)
-                    .str.replace("—", "-", regex=False)
-                    .str.replace(r"\s+", " ", regex=True)
-                )
-
-        score_col = "Vegetation Score (0-100)"
-        if score_col not in df.columns:
-            return pd.DataFrame()
-
-        df[score_col] = pd.to_numeric(df[score_col], errors="coerce")
-        # The vegetation workbook stores the score on a 0-100 scale; the
-        # dashboard's sub-score convention is 0-1. Keep the original data
-        # untouched and derive only the dashboard-facing value here.
-        df["vegetation_score_01"] = df[score_col] / 100.0
-
-        return df
-    except Exception as exc:
-        st.warning(f"Could not read vegetation condition data: {exc}")
-        return pd.DataFrame()
-
-
-def get_vegetation_condition_record(
-    df_vegetation: pd.DataFrame,
-    selected_state: str,
-    selected_district: str,
-    selected_block: str,
-    selected_village: str,
-) -> Optional[pd.Series]:
-    if df_vegetation.empty or selected_village == "All Villages":
-        return None
-
-    required = ["State", "District", "Block", "Village", "vegetation_score_01"]
-    if any(col not in df_vegetation.columns for col in required):
-        return None
-
-    def _key(value: Any) -> str:
-        value = normalize_text(value)
-        value = value.replace("Â·", "·")
-        value = value.replace("–", "-").replace("—", "-")
-        value = re.sub(r"\s+", " ", value).strip()
-        return value.casefold()
-
-    state = _key(selected_state)
-    district = _key(selected_district)
-    block = _key(selected_block)
-    village = _key(selected_village)
-
-    vegetation_state = df_vegetation["State"].map(_key)
-    vegetation_district = df_vegetation["District"].map(_key)
-    vegetation_block = df_vegetation["Block"].map(_key)
-    vegetation_village = df_vegetation["Village"].map(_key)
-
-    # Primary match: full geographic hierarchy.
-    full = df_vegetation[
-        (vegetation_state == state)
-        & (vegetation_district == district)
-        & (vegetation_block == block)
-        & (vegetation_village == village)
-    ]
-
-    if len(full) == 1:
-        return full.iloc[0]
-
-    # Safe fallback for records where the hierarchy differs slightly.
-    fallback = df_vegetation[
-        (vegetation_state == state)
-        & (vegetation_village == village)
-    ]
-
-    if len(fallback) == 1:
-        row = fallback.iloc[0]
-        row_district = _key(row.get("District", ""))
-        row_block = _key(row.get("Block", ""))
-        if (row_district == district and row_block == block) or (
-            not row_district and not row_block
-        ):
-            return row
-
-    return None
-
-
-# =============================================================================
 # 4. CLIMATE SIGNALS DATA
 # =============================================================================
 @st.cache_data(show_spinner=False)
@@ -1098,6 +977,120 @@ def get_physical_condition_record(
             row_district == district and row_block == block
         ):
             return row
+
+    return None
+
+
+# -----------------------------------------------------------------------------
+# VEGETATION CONDITION DATA — integrated only into the existing sub-score.
+# The rest of the dashboard is intentionally unchanged.
+# -----------------------------------------------------------------------------
+@st.cache_data(show_spinner=False)
+def load_vegetation_condition_data() -> pd.DataFrame:
+    app_dir = os.path.dirname(os.path.abspath(__file__))
+    data_dir = os.path.join(app_dir, "data", "vegetation_condition")
+
+    if not os.path.isdir(data_dir):
+        return pd.DataFrame()
+
+    # Use the newest generated vegetation workbook in the data folder.
+    candidates = [
+        os.path.join(data_dir, name)
+        for name in os.listdir(data_dir)
+        if name.lower().endswith(".xlsx")
+        and name.lower().startswith("vegetation_condition_59_villages")
+    ]
+
+    if not candidates:
+        return pd.DataFrame()
+
+    path = max(candidates, key=os.path.getmtime)
+
+    try:
+        # The generated workbook has a title row above the real header.
+        df = pd.read_excel(path, sheet_name="Vegetation Results", header=1)
+        df.columns = [str(c).strip() for c in df.columns]
+
+        required = [
+            "State",
+            "District",
+            "Block",
+            "Village",
+            "Vegetation Status",
+            "Vegetation Score (0-100)",
+        ]
+        if any(col not in df.columns for col in required):
+            return pd.DataFrame()
+
+        for col in ["State", "District", "Block", "Village", "Vegetation Status"]:
+            df[col] = (
+                df[col]
+                .fillna("")
+                .astype(str)
+                .str.strip()
+                .str.replace("Â·", "·", regex=False)
+                .str.replace("–", "-", regex=False)
+                .str.replace("—", "-", regex=False)
+            )
+
+        df["Vegetation Score (0-100)"] = pd.to_numeric(
+            df["Vegetation Score (0-100)"],
+            errors="coerce",
+        )
+
+        return df
+
+    except Exception as exc:
+        st.warning(f"Could not read vegetation condition data: {exc}")
+        return pd.DataFrame()
+
+
+def get_vegetation_condition_record(
+    df_vegetation: pd.DataFrame,
+    selected_state: str,
+    selected_district: str,
+    selected_block: str,
+    selected_village: str,
+) -> Optional[pd.Series]:
+    if df_vegetation.empty or selected_village == "All Villages":
+        return None
+
+    required = [
+        "State",
+        "District",
+        "Block",
+        "Village",
+        "Vegetation Score (0-100)",
+    ]
+    if any(col not in df_vegetation.columns for col in required):
+        return None
+
+    def _key(value: Any) -> str:
+        value = normalize_text(value)
+        value = value.replace("Â·", "·")
+        value = value.replace("–", "-").replace("—", "-")
+        value = re.sub(r"\s+", " ", value).strip()
+        return value.casefold()
+
+    state = _key(selected_state)
+    district = _key(selected_district)
+    block = _key(selected_block)
+    village = _key(selected_village)
+
+    veg_state = df_vegetation["State"].map(_key)
+    veg_district = df_vegetation["District"].map(_key)
+    veg_block = df_vegetation["Block"].map(_key)
+    veg_village = df_vegetation["Village"].map(_key)
+
+    full = df_vegetation[
+        (veg_state == state)
+        & (veg_district == district)
+        & (veg_block == block)
+        & (veg_village == village)
+    ]
+
+    if len(full) == 1:
+        return full.iloc[0]
 
     return None
 
@@ -1946,33 +1939,6 @@ if dashboard_mode == "LCAT & GPDP":
             else 0.0
         )
 
-        vegetation_record = get_vegetation_condition_record(
-            df_vegetation,
-            selected_state,
-            selected_district,
-            selected_block,
-            selected_village,
-        )
-
-        vegetation_value = (
-            float(vegetation_record["vegetation_score_01"])
-            if vegetation_record is not None
-            and pd.notna(vegetation_record["vegetation_score_01"])
-            else np.nan
-        )
-
-        vegetation_display = (
-            f"{vegetation_value:.2f}"
-            if np.isfinite(vegetation_value)
-            else "NaN"
-        )
-
-        vegetation_width = (
-            max(0.0, min(100.0, vegetation_value * 100.0))
-            if np.isfinite(vegetation_value)
-            else 0.0
-        )
-
         elevation_display = "NaN"
         slope_display = "NaN"
 
@@ -1994,8 +1960,34 @@ if dashboard_mode == "LCAT & GPDP":
                 value_display = physical_display
                 width = physical_width
             elif label == "Vegetation condition":
-                value_display = vegetation_display
-                width = vegetation_width
+                vegetation_record = get_vegetation_condition_record(
+                    df_vegetation,
+                    selected_state,
+                    selected_district,
+                    selected_block,
+                    selected_village,
+                )
+
+                vegetation_score_100 = (
+                    float(vegetation_record["Vegetation Score (0-100)"])
+                    if vegetation_record is not None
+                    and pd.notna(vegetation_record["Vegetation Score (0-100)"])
+                    else np.nan
+                )
+
+                # Dashboard sub-scores use 0–1 internally.
+                vegetation_value = vegetation_score_100 / 100.0
+
+                value_display = (
+                    f"{vegetation_value:.2f}"
+                    if np.isfinite(vegetation_value)
+                    else "NaN"
+                )
+                width = (
+                    max(0.0, min(100.0, vegetation_value * 100.0))
+                    if np.isfinite(vegetation_value)
+                    else 0.0
+                )
             else:
                 value_display = "NaN"
                 width = 0
