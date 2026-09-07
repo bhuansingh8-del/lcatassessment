@@ -1458,6 +1458,7 @@ if "basemap_choice" not in st.session_state:
 df_gpdp = load_gpdp_data()
 df_villages = build_village_summary(df_gpdp)
 df_physical = load_physical_condition_data()
+df_vegetation = load_vegetation_condition_data()
 
 available_states = (
     sorted(df_villages["state"].dropna().unique().tolist())
