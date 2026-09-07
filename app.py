@@ -1459,7 +1459,6 @@ df_gpdp = load_gpdp_data()
 df_villages = build_village_summary(df_gpdp)
 df_physical = load_physical_condition_data()
 df_vegetation = load_vegetation_condition_data()
-
 available_states = (
     sorted(df_villages["state"].dropna().unique().tolist())
     if not df_villages.empty else []
@@ -1952,7 +1951,32 @@ if dashboard_mode == "LCAT & GPDP":
             if np.isfinite(physical_value)
             else 0.0
         )
+        veg_record = get_vegetation_condition_record(
+            df_vegetation,
+            selected_state,
+            selected_district,
+            selected_block,
+            selected_village,
+        )
 
+        veg_value = (
+            float(veg_record["Vegetation Score (0-100)"])
+            if veg_record is not None
+            and pd.notna(veg_record["Vegetation Score (0-100)"])
+            else np.nan
+        )
+
+        veg_display = (
+            f"{veg_value:.2f}"
+            if np.isfinite(veg_value)
+            else "NaN"
+        )
+
+        veg_width = (
+            max(0.0, min(100.0, veg_value))
+            if np.isfinite(veg_value)
+            else 0.0
+        )
         elevation_display = "NaN"
         slope_display = "NaN"
 
@@ -1973,6 +1997,9 @@ if dashboard_mode == "LCAT & GPDP":
             if label == "Physical condition":
                 value_display = physical_display
                 width = physical_width
+            elif label == "Vegetation condition":
+                value_display = veg_display
+                width = veg_width
             else:
                 value_display = "NaN"
                 width = 0
