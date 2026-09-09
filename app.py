@@ -1108,7 +1108,87 @@ def get_vegetation_condition_record(
         return full.iloc[0]
 
     return None
+# -----------------------------------------------------------------------------
+# HUMAN / ANTHROPOGENIC PRESSURE DATA
+# Higher raw human_pressure_score = more pressure (worse).
+# Dashboard uses the inverse score so higher = better condition.
+# -----------------------------------------------------------------------------
+@st.cache_data(show_spinner=False)
+def load_human_pressure_data() -> pd.DataFrame:
+    app_dir = os.path.dirname(os.path.abspath(__file__))
+    path = os.path.join(app_dir, "data", "human_pressure", "human_pressure_57_final.csv")
 
+    if not os.path.exists(path):
+        return pd.DataFrame()
+
+    try:
+        df = pd.read_csv(path)
+        df.columns = [str(c).strip().lower() for c in df.columns]
+
+        for col in ["state", "village"]:
+            if col in df.columns:
+                df[col] = (
+                    df[col]
+                    .fillna("")
+                    .astype(str)
+                    .str.strip()
+                    .str.replace("–", "-", regex=False)
+                    .str.replace("—", "-", regex=False)
+                )
+
+        if "human_pressure_score" in df.columns:
+            df["human_pressure_score"] = pd.to_numeric(
+                df["human_pressure_score"],
+                errors="coerce",
+            )
+
+        return df
+
+    except Exception as exc:
+        st.warning(f"Could not read human pressure data: {exc}")
+        return pd.DataFrame()
+
+
+def get_human_pressure_record(
+    df_human: pd.DataFrame,
+    selected_state: str,
+    selected_village: str,
+) -> Optional[pd.Series]:
+    if df_human.empty or selected_village == "All Villages":
+        return None
+
+    required = ["state", "village", "human_pressure_score"]
+    if any(col not in df_human.columns for col in required):
+        return None
+
+    state_map = {
+        "Chhattisgarh": "CG",
+        "Madhya Pradesh": "MP",
+        "Uttar Pradesh": "UP",
+        "Jharkhand": "JH",
+    }
+
+    target_state = state_map.get(selected_state, selected_state)
+
+    def _key(value: Any) -> str:
+        value = normalize_text(value)
+        value = value.replace("Â·", "·")
+        value = value.replace("–", "-").replace("—", "-")
+        value = re.sub(r"\s+", " ", value).strip()
+        return value.casefold()
+
+    state = _key(target_state)
+    village = _key(selected_village)
+
+    matches = df_human[
+        (df_human["state"].map(_key) == state)
+        & (df_human["village"].map(_key) == village)
+    ]
+
+    if len(matches) == 1:
+        return matches.iloc[0]
+
+    return None
 
 @st.cache_data(show_spinner=False)
 def load_climate_data() -> pd.DataFrame:
@@ -1194,6 +1274,28 @@ def load_trajectory_data() -> pd.DataFrame:
 # =============================================================================
 # 7. MAP HELPERS
 # =============================================================================
+def get_score_color(value: float) -> str:
+    if not np.isfinite(value):
+        return "#C9C2AC"
+
+    value = max(0.0, min(1.0, float(value)))
+
+    low = np.array([196, 72, 58], dtype=float)      # red
+    mid = np.array([190, 134, 50], dtype=float)     # amber
+    high = np.array([62, 107, 71], dtype=float)     # green
+
+    if value <= 0.5:
+        t = value / 0.5
+        rgb = low + (mid - low) * t
+    else:
+        t = (value - 0.5) / 0.5
+        rgb = mid + (high - mid) * t
+
+    return "#{:02x}{:02x}{:02x}".format(
+        int(round(rgb[0])),
+        int(round(rgb[1])),
+        int(round(rgb[2])),
+    )
 def get_demand_color(demand: int) -> str:
     if demand <= 35:
         return "#fef08a"
@@ -1459,6 +1561,7 @@ df_gpdp = load_gpdp_data()
 df_villages = build_village_summary(df_gpdp)
 df_physical = load_physical_condition_data()
 df_vegetation = load_vegetation_condition_data()
+df_human = load_human_pressure_data()
 available_states = (
     sorted(df_villages["state"].dropna().unique().tolist())
     if not df_villages.empty else []
@@ -1841,9 +1944,39 @@ if dashboard_mode == "LCAT & GPDP":
         scope_villages = filtered_geo["name"].nunique() if not filtered_geo.empty else 0
         total_actions = len(filtered_actions)
 
-        t1_count = int((filtered_actions["Clean_Tier"] == "Tier 1 — Community Led").sum()) if not filtered_actions.empty else 0
-        t2_count = int((filtered_actions["Clean_Tier"] == "Tier 2 — Minor Support").sum()) if not filtered_actions.empty else 0
-        t3_count = int((filtered_actions["Clean_Tier"] == "Tier 3 — External Support & Convergence").sum()) if not filtered_actions.empty else 0
+        if (
+            st.session_state["theme_filter"] == "All"
+            and st.session_state["tier_filter"] == "All"
+            and st.session_state["pillar_filter"] == "All"
+        ):
+            t1_count = int(filtered_geo["tier1"].sum()) if not filtered_geo.empty else 0
+            t2_count = int(filtered_geo["tier2"].sum()) if not filtered_geo.empty else 0
+            t3_count = int(filtered_geo["tier3"].sum()) if not filtered_geo.empty else 0
+        else:
+            t1_count = (
+                int(
+                    (filtered_actions["Clean_Tier"] == "Tier 1 — Community Led").sum()
+                )
+                if not filtered_actions.empty
+                else 0
+            )
+            t2_count = (
+                int(
+                    (filtered_actions["Clean_Tier"] == "Tier 2 — Minor Support").sum()
+                )
+                if not filtered_actions.empty
+                else 0
+            )
+            t3_count = (
+                int(
+                    (
+                        filtered_actions["Clean_Tier"]
+                        == "Tier 3 — External Support & Convergence"
+                    ).sum()
+                )
+                if not filtered_actions.empty
+                else 0
+            )
         tier_total = t1_count + t2_count + t3_count
 
         if tier_total > 0:
@@ -1973,8 +2106,38 @@ if dashboard_mode == "LCAT & GPDP":
         )
 
         veg_width = (
-            max(0.0, min(100.0, veg_value))
+            max(0.0, min(100.0, veg_value * 100.0))
             if np.isfinite(veg_value)
+            else 0.0
+        )
+        human_record = get_human_pressure_record(
+            df_human,
+            selected_state,
+            selected_village,
+        )
+
+        human_raw_value = (
+            float(human_record["human_pressure_score"])
+            if human_record is not None
+            and pd.notna(human_record["human_pressure_score"])
+            else np.nan
+        )
+
+        anthropogenic_value = (
+            human_raw_value
+            if np.isfinite(human_raw_value)
+            else np.nan
+        )
+
+        anthropogenic_display = (
+            f"{anthropogenic_value:.2f}"
+            if np.isfinite(anthropogenic_value)
+            else "NaN"
+        )
+
+        anthropogenic_width = (
+            max(0.0, min(100.0, anthropogenic_value * 100.0))
+            if np.isfinite(anthropogenic_value)
             else 0.0
         )
         elevation_display = "NaN"
@@ -1988,21 +2151,31 @@ if dashboard_mode == "LCAT & GPDP":
 
         st.markdown("<div class='section-label'>Sub-scores (pending)</div>", unsafe_allow_html=True)
 
-        for label, color in [
-            ("Physical condition", COLORS["moss"]),
-            ("Vegetation condition", COLORS["sage"]),
-            ("Hydrological condition", COLORS["slate"]),
-            ("Anthropogenic pressure (inv.)", COLORS["brick"]),
+        for label in [
+            "Physical condition",
+            "Vegetation condition",
+            "Hydrological condition",
+            "Anthropogenic pressure (inv.)",
         ]:
             if label == "Physical condition":
                 value_display = physical_display
                 width = physical_width
+                color = get_score_color(physical_value)
+
             elif label == "Vegetation condition":
                 value_display = veg_display
                 width = veg_width
+                color = get_score_color(veg_value)
+
+            elif label == "Anthropogenic pressure (inv.)":
+                value_display = anthropogenic_display
+                width = anthropogenic_width
+                color = get_score_color(anthropogenic_value)
+
             else:
                 value_display = "NaN"
                 width = 0
+                color = "#C9C2AC"
 
             st.markdown(
                 f"""
