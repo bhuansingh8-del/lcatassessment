@@ -624,6 +624,22 @@ def normalize_text(value: Any) -> str:
         return ""
     return str(value).strip()
 
+def canonical_village_key(value: Any) -> str:
+    if pd.isna(value):
+        return ""
+
+    v = str(value).strip()
+
+    v = (
+        v.replace("Â·", "·")
+         .replace("–", "-")
+         .replace("—", "-")
+    )
+
+    # Remove punctuation and whitespace for controlled comparisons.
+    v = re.sub(r"[^a-zA-Z0-9]", "", v)
+
+    return v.casefold()
 
 def normalize_theme(value: Any) -> str:
     """Normalize GPDP/LCAT theme labels to one of the eight canonical themes."""
@@ -944,12 +960,12 @@ def get_physical_condition_record(
     state = _key(selected_state)
     district = _key(selected_district)
     block = _key(selected_block)
-    village = _key(selected_village)
+    village = canonical_village_key(selected_village)
 
     physical_state = df_physical["state"].map(_key)
     physical_district = df_physical["district"].map(_key)
     physical_block = df_physical["block"].map(_key)
-    physical_village = df_physical["village"].map(_key)
+    physical_village = df_physical["village"].map(canonical_village_key)
 
     # Primary match: preserve the original full geographic hierarchy.
     full = df_physical[
@@ -995,6 +1011,56 @@ def load_climate_data() -> pd.DataFrame:
         return df
     except Exception as exc:
         st.error(f"Error reading climate CSV: {exc}")
+        return pd.DataFrame()
+# -----------------------------------------------------------------------------
+# CANONICAL 59-VILLAGE REFERENCE
+# -----------------------------------------------------------------------------
+@st.cache_data(show_spinner=False)
+def load_target_villages() -> pd.DataFrame:
+    app_dir = os.path.dirname(os.path.abspath(__file__))
+    path = os.path.join(
+        app_dir,
+        "data",
+        "target_villages",
+        "target_59_villages_complete.xlsx",
+    )
+
+    if not os.path.exists(path):
+        return pd.DataFrame()
+
+    try:
+        df = pd.read_excel(
+            path,
+            sheet_name="Complete 59 Villages",
+        )
+
+        df.columns = [str(c).strip() for c in df.columns]
+
+        required = [
+            "state",
+            "district",
+            "block",
+            "village",
+        ]
+
+        if any(c not in df.columns for c in required):
+            return pd.DataFrame()
+
+        for col in required:
+            df[col] = (
+                df[col]
+                .fillna("")
+                .astype(str)
+                .str.strip()
+                .str.replace("Â·", "·", regex=False)
+                .str.replace("–", "-", regex=False)
+                .str.replace("—", "-", regex=False)
+            )
+
+        return df
+
+    except Exception as exc:
+        st.warning(f"Could not read canonical village list: {exc}")
         return pd.DataFrame()
 # -----------------------------------------------------------------------------
 # VEGETATION CONDITION DATA — integrated only into the existing sub-score.
@@ -1090,7 +1156,7 @@ def get_vegetation_condition_record(
     state = _key(selected_state)
     district = _key(selected_district)
     block = _key(selected_block)
-    village = _key(selected_village)
+    village = canonical_village_key(selected_village)
 
     veg_state = df_vegetation["State"].map(_key)
     veg_district = df_vegetation["District"].map(_key)
@@ -1148,7 +1214,28 @@ def load_human_pressure_data() -> pd.DataFrame:
         st.warning(f"Could not read human pressure data: {exc}")
         return pd.DataFrame()
 
-
+HUMAN_VILLAGE_ALIASES = {
+    "Pharsigaon": "Pharasgaon",
+    "Bade Panera": "Badepaneda",
+    "Daspur": "Dashpur",
+    "Chinchdongari": "Chichdongari",
+    "Vanusari": "Usari",
+    "Cha Tolagaon (Chamarrai Tolagaon)": "Chamarray Tolagaon",
+    "Tumdibod": "Tumdiboda",
+    "Richi": "Richhi",
+    "Sukhedi": "Khedi",
+    "Bhimkund": "Bhim Kund",
+    "Pakhodna": "Pakhodana",
+    "Ranjit Gadhi": "Ranjitgarh",
+    "Manjhra": "Majhara",
+    "Ram Nagar Kanda": "Ram Nagara",
+    "Bagheda Khurd": "Baghera Khurd",
+    "Devghat · Belhat": "Devghat",
+    "Bhedaha": "Bhedahan",
+    "Latar Kundrijod": "Latar Kundrijhor",
+    "Upar Barga": "Uparbarga",
+    "Chhote Banjoda": "Chhotebanjoda",
+}
 def get_human_pressure_record(
     df_human: pd.DataFrame,
     selected_state: str,
@@ -1179,10 +1266,18 @@ def get_human_pressure_record(
 
     state = _key(target_state)
     village = _key(selected_village)
+    
+    source_village = HUMAN_VILLAGE_ALIASES.get(
+    selected_village,
+    selected_village,
+)
 
     matches = df_human[
         (df_human["state"].map(_key) == state)
-        & (df_human["village"].map(_key) == village)
+        & (
+            df_human["village"].map(canonical_village_key)
+            == canonical_village_key(source_village)
+        )
     ]
 
     if len(matches) == 1:
@@ -1562,6 +1657,7 @@ df_villages = build_village_summary(df_gpdp)
 df_physical = load_physical_condition_data()
 df_vegetation = load_vegetation_condition_data()
 df_human = load_human_pressure_data()
+df_target = load_target_villages()
 available_states = (
     sorted(df_villages["state"].dropna().unique().tolist())
     if not df_villages.empty else []
