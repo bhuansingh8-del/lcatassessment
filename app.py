@@ -2494,7 +2494,7 @@ if dashboard_mode == "LCAT & GPDP":
             if np.isfinite(overall_value)
             else "#C9C2AC"
         )
-        overall_col, overall_info_col = st.columns([0.96, 0.04], gap="small")
+        overall_col, overall_info_col = st.columns([0.97, 0.03], gap="small")
 
         with overall_col:
             st.markdown(
@@ -2514,10 +2514,16 @@ if dashboard_mode == "LCAT & GPDP":
             )
 
         with overall_info_col:
-            with st.popover("ⓘ"):
+            with st.popover(
+                "",
+                icon=":material/info:",
+                type="tertiary",
+                help="How the Overall LCAT score is calculated",
+                width="content",
+            ):
                 st.markdown(
                     OVERALL_METHODOLOGY
-        )
+                )
         elevation_display = "NaN"
         slope_display = "NaN"
         rainfall_display = "NaN"
@@ -2583,7 +2589,7 @@ if dashboard_mode == "LCAT & GPDP":
                 width = 0
                 color = "#C9C2AC"
                 
-            score_row_left, score_row_info = st.columns([0.96, 0.04], gap="small")
+            score_row_left, score_row_info = st.columns([0.97, 0.03], gap="small")
 
             with score_row_left:
                 st.markdown(
@@ -2606,11 +2612,16 @@ if dashboard_mode == "LCAT & GPDP":
                 )
 
             with score_row_info:
-                with st.popover("ⓘ"):
+                with st.popover(
+                    "",
+                    icon=":material/info:",
+                    type="tertiary",
+                    help=f"How the {label} score is calculated",
+                    width="content",
+                ):
                     st.markdown(
                         SCORE_METHODOLOGY[label]
                     )
-
         st.markdown("<div class='section-label'>Land characteristics</div>", unsafe_allow_html=True)
         st.markdown(
             f"""
