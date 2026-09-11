@@ -1161,7 +1161,7 @@ def get_vegetation_condition_record(
     veg_state = df_vegetation["State"].map(_key)
     veg_district = df_vegetation["District"].map(_key)
     veg_block = df_vegetation["Block"].map(_key)
-    veg_village = df_vegetation["Village"].map(_key)
+    veg_village = df_vegetation["Village"].map(canonical_village_key)
 
     full = df_vegetation[
         (veg_state == state)
@@ -1172,6 +1172,125 @@ def get_vegetation_condition_record(
 
     if len(full) == 1:
         return full.iloc[0]
+
+    return None
+
+# -----------------------------------------------------------------------------
+# WATER / HYDROLOGICAL CONDITION DATA
+# water_condition_overall is already normalized to a 0-1 condition score.
+# Higher = better hydrological condition.
+# -----------------------------------------------------------------------------
+@st.cache_data(show_spinner=False)
+def load_water_condition_data() -> pd.DataFrame:
+    app_dir = os.path.dirname(os.path.abspath(__file__))
+    path = os.path.join(
+        app_dir,
+        "data",
+        "water_condition",
+        "water_condition_57_villages_corrected.csv",
+    )
+
+    if not os.path.exists(path):
+        return pd.DataFrame()
+
+    try:
+        df = pd.read_csv(path)
+        df.columns = [str(c).strip().lower() for c in df.columns]
+
+        for col in ["state", "district", "block", "village"]:
+            if col in df.columns:
+                df[col] = (
+                    df[col]
+                    .fillna("")
+                    .astype(str)
+                    .str.strip()
+                    .str.replace("Â·", "·", regex=False)
+                    .str.replace("–", "-", regex=False)
+                    .str.replace("—", "-", regex=False)
+                )
+
+        for col in [
+            "water_condition_overall",
+            "rainfall_mean_2021_2025_mm",
+            "rainfall_cv_percent",
+            "rainfall_2025_anomaly_percent",
+            "surface_water_score",
+            "flood_susceptibility_condition",
+            "drainage_connectivity_condition",
+        ]:
+            if col in df.columns:
+                df[col] = pd.to_numeric(
+                    df[col],
+                    errors="coerce",
+                )
+
+        return df
+
+    except Exception as exc:
+        st.warning(f"Could not read water condition data: {exc}")
+        return pd.DataFrame()
+
+
+def get_water_condition_record(
+    df_water: pd.DataFrame,
+    selected_state: str,
+    selected_district: str,
+    selected_block: str,
+    selected_village: str,
+) -> Optional[pd.Series]:
+    if df_water.empty or selected_village == "All Villages":
+        return None
+
+    required = [
+        "state",
+        "district",
+        "block",
+        "village",
+        "water_condition_overall",
+    ]
+
+    if any(col not in df_water.columns for col in required):
+        return None
+
+    def _key(value: Any) -> str:
+        value = normalize_text(value)
+        value = value.replace("Â·", "·")
+        value = value.replace("–", "-").replace("—", "-")
+        value = re.sub(r"\s+", " ", value).strip()
+        return value.casefold()
+
+    state = _key(selected_state)
+    district = _key(selected_district)
+    block = _key(selected_block)
+    village = canonical_village_key(selected_village)
+
+    water_state = df_water["state"].map(_key)
+    water_district = df_water["district"].map(_key)
+    water_block = df_water["block"].map(_key)
+    water_village = df_water["village"].map(canonical_village_key)
+
+    full = df_water[
+        (water_state == state)
+        & (water_district == district)
+        & (water_block == block)
+        & (water_village == village)
+    ]
+
+    if len(full) == 1:
+        return full.iloc[0]
+
+    state_village = df_water[
+        (water_state == state)
+        & (water_village == village)
+    ]
+
+    if len(state_village) == 1:
+        return state_village.iloc[0]
+
+    village_only = df_water[water_village == village]
+
+    if len(village_only) == 1:
+        return village_only.iloc[0]
 
     return None
 # -----------------------------------------------------------------------------
@@ -1657,6 +1776,7 @@ df_villages = build_village_summary(df_gpdp)
 df_physical = load_physical_condition_data()
 df_vegetation = load_vegetation_condition_data()
 df_human = load_human_pressure_data()
+df_water = load_water_condition_data()
 df_target = load_target_villages()
 available_states = (
     sorted(df_villages["state"].dropna().unique().tolist())
@@ -2140,20 +2260,6 @@ if dashboard_mode == "LCAT & GPDP":
             unsafe_allow_html=True,
         )
 
-        # Condition-score placeholder: keep overall score pending; only Physical Condition is populated.
-        st.markdown(
-            """
-            <div class="score-card">
-                <div class="score-gauge"><span>NaN</span></div>
-                <div class="score-copy">
-                    <strong>Overall LCAT score</strong>
-                    <small>Score logic pending</small>
-                </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
         physical_record = get_physical_condition_record(
             df_physical,
             selected_state,
@@ -2206,6 +2312,32 @@ if dashboard_mode == "LCAT & GPDP":
             if np.isfinite(veg_value)
             else 0.0
         )
+        water_record = get_water_condition_record(
+            df_water,
+            selected_state,
+            selected_district,
+            selected_block,
+            selected_village,
+        )
+
+        hydrological_value = (
+            float(water_record["water_condition_overall"])
+            if water_record is not None
+            and pd.notna(water_record["water_condition_overall"])
+            else np.nan
+        )
+
+        hydrological_display = (
+            f"{hydrological_value:.2f}"
+            if np.isfinite(hydrological_value)
+            else "NaN"
+        )
+
+        hydrological_width = (
+            max(0.0, min(100.0, hydrological_value * 100.0))
+            if np.isfinite(hydrological_value)
+            else 0.0
+        )
         human_record = get_human_pressure_record(
             df_human,
             selected_state,
@@ -2220,7 +2352,7 @@ if dashboard_mode == "LCAT & GPDP":
         )
 
         anthropogenic_value = (
-            human_raw_value
+             1.0 - human_raw_value
             if np.isfinite(human_raw_value)
             else np.nan
         )
@@ -2236,16 +2368,77 @@ if dashboard_mode == "LCAT & GPDP":
             if np.isfinite(anthropogenic_value)
             else 0.0
         )
+        overall_components = [
+            physical_value,
+            veg_value,
+            hydrological_value,
+            anthropogenic_value,
+        ]
+
+        if all(np.isfinite(x) for x in overall_components):
+            overall_value = float(np.mean(overall_components))
+        else:
+            overall_value = np.nan
+
+        overall_display = (
+            f"{overall_value:.2f}"
+            if np.isfinite(overall_value)
+            else "NaN"
+        )
+
+        overall_color = (
+            get_score_color(overall_value)
+            if np.isfinite(overall_value)
+            else "#C9C2AC"
+        )
+        st.markdown(
+            f"""
+            <div class="score-card">
+                <div class="score-gauge"
+                    style="border-color:{overall_color};">
+                    <span>{overall_display}</span>
+                </div>
+                <div class="score-copy">
+                    <strong>Overall LCAT score</strong>
+                    <small>Combined condition score</small>
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
         elevation_display = "NaN"
         slope_display = "NaN"
+        rainfall_display = "NaN"
+        rainfall_cv_display = "NaN"
+        surface_water_display = "NaN"
+        flood_resilience_display = "NaN"
 
         if physical_record is not None:
             if pd.notna(physical_record.get("elevation_mean_m", np.nan)):
                 elevation_display = f"{float(physical_record['elevation_mean_m']):.0f} m"
             if pd.notna(physical_record.get("mean_slope_deg", np.nan)):
                 slope_display = f"{float(physical_record['mean_slope_deg']):.1f}°"
+        if water_record is not None:
+            if pd.notna(water_record.get("rainfall_mean_2021_2025_mm", np.nan)):
+                rainfall_display = (
+                    f"{float(water_record['rainfall_mean_2021_2025_mm']):.0f} mm"
+                )
 
-        st.markdown("<div class='section-label'>Sub-scores (pending)</div>", unsafe_allow_html=True)
+            if pd.notna(water_record.get("rainfall_cv_percent", np.nan)):
+                rainfall_cv_display = (
+                    f"{float(water_record['rainfall_cv_percent']):.1f}%"
+                )
+
+            if pd.notna(water_record.get("surface_water_score", np.nan)):
+                surface_water_display = (
+                    f"{float(water_record['surface_water_score']):.1f}%"
+                )
+
+            if pd.notna(water_record.get("flood_susceptibility_condition", np.nan)):
+                flood_resilience_display = (
+                    f"{float(water_record['flood_susceptibility_condition']) * 100:.1f}%"
+                )
+        st.markdown("<div class='section-label'>Sub-scores</div>", unsafe_allow_html=True)
 
         for label in [
             "Physical condition",
@@ -2268,11 +2461,16 @@ if dashboard_mode == "LCAT & GPDP":
                 width = anthropogenic_width
                 color = get_score_color(anthropogenic_value)
 
+            elif label == "Hydrological condition":
+                value_display = hydrological_display
+                width = hydrological_width
+                color = get_score_color(hydrological_value)
+
             else:
                 value_display = "NaN"
                 width = 0
                 color = "#C9C2AC"
-
+                
             st.markdown(
                 f"""
                 <div class="subscore">
@@ -2286,14 +2484,14 @@ if dashboard_mode == "LCAT & GPDP":
         st.markdown("<div class='section-label'>Land characteristics</div>", unsafe_allow_html=True)
         st.markdown(
             f"""
-            <div class="stat-grid">
-                <div><div class="value">{elevation_display}</div><div class="label">Elevation</div></div>
-                <div><div class="value">{slope_display}</div><div class="label">Mean slope</div></div>
-                <div><div class="value">NaN</div><div class="label">Forest cover</div></div>
-                <div><div class="value">NaN</div><div class="label">Agriculture</div></div>
-                <div><div class="value">NaN</div><div class="label">Built-up</div></div>
-                <div><div class="value">NaN</div><div class="label">Dist. to river</div></div>
-            </div>
+                <div class="stat-grid">
+                    <div><div class="value">{elevation_display}</div><div class="label">Elevation</div></div>
+                    <div><div class="value">{slope_display}</div><div class="label">Mean slope</div></div>
+                    <div><div class="value">{rainfall_display}</div><div class="label">Mean rainfall</div></div>
+                    <div><div class="value">{rainfall_cv_display}</div><div class="label">Rainfall CV</div></div>
+                    <div><div class="value">{surface_water_display}</div><div class="label">Surface water score</div></div>
+                    <div><div class="value">{flood_resilience_display}</div><div class="label">Flood condition</div></div>
+                </div>
             """,
             unsafe_allow_html=True,
         )
