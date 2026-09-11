@@ -1767,6 +1767,109 @@ if "pillar_filter" not in st.session_state:
 if "basemap_choice" not in st.session_state:
     st.session_state["basemap_choice"] = "CartoDB Positron"
 
+# -----------------------------------------------------------------------------
+# SCORE METHODOLOGY — SHORT DASHBOARD POPUPS
+# -----------------------------------------------------------------------------
+SCORE_METHODOLOGY = {
+    "Physical condition": """
+**Physical Condition Score**
+
+A composite 0–1 index of:
+
+• Terrain condition  
+• Slope condition  
+• Soil quality  
+
+**Terrain:** Copernicus DEM GLO-30 elevation relief (P95 − P5),
+normalized inversely using the village P10–P90 distribution.
+
+**Slope:** Mean village slope, normalized inversely using P10–P90.
+
+**Soil:** SoilGrids SOC, nitrogen, CEC and pH for 0–30 cm,
+combined into a Soil Quality Score.
+
+**Final:** Terrain ⅓ + Slope ⅓ + Soil Quality ⅓.
+
+Higher = better physical condition.
+""",
+
+    "Vegetation condition": """
+**Vegetation Condition Score**
+
+A 0–1 composite from Sentinel-2 Level-2A observations:
+
+• NDVI — vegetation greenness/vigour  
+• EVI — complementary vegetation signal  
+• NDMI — canopy moisture  
+
+Valid observations are aggregated using 30-day intervals and
+median (P50) statistics.
+
+Each indicator is normalized using the P5–P95 distribution
+of successful villages.
+
+**Final:** NDVI 50% + EVI 25% + NDMI 25%.
+
+Higher = better vegetation condition.
+""",
+
+    "Hydrological condition": """
+**Hydrological Condition Score**
+
+A 0–1 composite of:
+
+• Rainfall condition — adequacy, stability and anomaly  
+• Surface-water condition — persistence, occurrence,
+  seasonality and recurrence  
+• Flood condition — modeled flood susceptibility  
+• Drainage condition — hydrological connectivity  
+
+**Final:** Rainfall 25% + Surface Water 25% +
+Flood 35% + Drainage 15%.
+
+All components are normalized to 0–1 before weighting.
+
+Higher = better hydrological condition.
+""",
+
+    "Anthropogenic pressure (inv.)": """
+**Anthropogenic Pressure (inverse)**
+
+Human pressure is estimated from:
+
+• Built-up pressure  
+• Road pressure  
+• Mining pressure/proximity  
+
+**Underlying weighting:** Built-up 40% + Roads 30% + Mining 30%.
+
+The dashboard uses the inverse of the source Human Pressure Score
+so that all dashboard condition scores follow the same direction:
+
+Dashboard score = 1 − Human Pressure Score
+
+**Higher = lower anthropogenic pressure**  
+**Lower = higher anthropogenic pressure**
+
+The score is normalized to 0–1 for village-level comparison.
+""",
+}
+
+OVERALL_METHODOLOGY = """
+**Overall LCAT Score**
+
+The dashboard combines the four condition dimensions using
+equal weights:
+
+**Overall = (Physical + Vegetation + Hydrological
++ Anthropogenic) / 4**
+
+The overall score is calculated only when all four component
+scores are available.
+
+0 = least favourable relative condition  
+1 = most favourable relative condition
+"""
 
 # =============================================================================
 # 10. LOAD BASE DATA
@@ -2391,20 +2494,29 @@ if dashboard_mode == "LCAT & GPDP":
             if np.isfinite(overall_value)
             else "#C9C2AC"
         )
-        st.markdown(
-            f"""
-            <div class="score-card">
-                <div class="score-gauge"
-                    style="border-color:{overall_color};">
-                    <span>{overall_display}</span>
+        overall_col, overall_info_col = st.columns([0.96, 0.04], gap="small")
+
+        with overall_col:
+            st.markdown(
+                f"""
+                <div class="score-card">
+                    <div class="score-gauge"
+                        style="border-color:{overall_color};">
+                        <span>{overall_display}</span>
+                    </div>
+                    <div class="score-copy">
+                        <strong>Overall LCAT score</strong>
+                        <small>Combined condition score</small>
+                    </div>
                 </div>
-                <div class="score-copy">
-                    <strong>Overall LCAT score</strong>
-                    <small>Combined condition score</small>
-                </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
+                """,
+                unsafe_allow_html=True,
+            )
+
+        with overall_info_col:
+            with st.popover("ⓘ"):
+                st.markdown(
+                    OVERALL_METHODOLOGY
         )
         elevation_display = "NaN"
         slope_display = "NaN"
@@ -2471,15 +2583,33 @@ if dashboard_mode == "LCAT & GPDP":
                 width = 0
                 color = "#C9C2AC"
                 
-            st.markdown(
-                f"""
-                <div class="subscore">
-                    <div class="subscore-head"><span>{label}</span><b>{value_display}</b></div>
-                    <div class="subscore-track"><div style="width:{width:.2f}%;height:100%;background:{color};"></div></div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
+            score_row_left, score_row_info = st.columns([0.96, 0.04], gap="small")
+
+            with score_row_left:
+                st.markdown(
+                    f"""
+                    <div class="subscore">
+                        <div class="subscore-head">
+                            <span>{label}</span>
+                            <b>{value_display}</b>
+                        </div>
+                        <div class="subscore-track">
+                            <div style="
+                                width:{width:.2f}%;
+                                height:100%;
+                                background:{color};
+                            "></div>
+                        </div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+
+            with score_row_info:
+                with st.popover("ⓘ"):
+                    st.markdown(
+                        SCORE_METHODOLOGY[label]
+                    )
 
         st.markdown("<div class='section-label'>Land characteristics</div>", unsafe_allow_html=True)
         st.markdown(
