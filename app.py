@@ -1856,7 +1856,7 @@ The score is normalized to 0–1 for village-level comparison.
 }
 
 OVERALL_METHODOLOGY = """
-**Overall LCAT Score**
+**Overall vulnerability Score**
 
 The dashboard combines the four condition dimensions using
 equal weights:
@@ -2518,7 +2518,7 @@ if dashboard_mode == "LCAT & GPDP":
                 "",
                 icon=":material/info:",
                 type="tertiary",
-                help="How the Overall LCAT score is calculated",
+                help="How the Overall vulnerability score is calculated",
                 width="content",
             ):
                 st.markdown(
