@@ -2505,7 +2505,7 @@ if dashboard_mode == "LCAT & GPDP":
                         <span>{overall_display}</span>
                     </div>
                     <div class="score-copy">
-                        <strong>Overall LCAT score</strong>
+                        <strong>Overall vulnerability score</strong>
                         <small>Combined condition score</small>
                     </div>
                 </div>
