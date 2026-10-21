@@ -2705,77 +2705,23 @@ if dashboard_mode == "LCAT & GPDP":
         with summary_col:
 
             st.markdown(
-                f"""
-                <div class="card summary-compact">
-                    <div class="summary-title">
-                        <h3>
-                            {html.escape(str(summary_scope))}
-                            Summary
-                        </h3>
-                        <span>
-                            {scope_villages} villages ·
-                            {total_actions} priority actions
-                        </span>
-                    </div>
-
-                    <div class="tier-bar">
-                        <div style="
-                            width:{widths[0]};
-                            background:{TIER_COLORS['Tier 1 — Community Led']};
-                        "></div>
-
-                        <div style="
-                            width:{widths[1]};
-                            background:{TIER_COLORS['Tier 2 — Minor Support']};
-                        "></div>
-
-                        <div style="
-                            width:{widths[2]};
-                            background:{TIER_COLORS['Tier 3 — External Support & Convergence']};
-                        "></div>
-                    </div>
-
-                    <div class="tier-legend">
-                        <span>
-                            <i class="legend-dot" style="
-                                background:{TIER_COLORS['Tier 1 — Community Led']};
-                            "></i>
-                            Tier 1
-                        </span>
-
-                        <span>
-                            <i class="legend-dot" style="
-                                background:{TIER_COLORS['Tier 2 — Minor Support']};
-                            "></i>
-                            Tier 2
-                        </span>
-
-                        <span>
-                            <i class="legend-dot" style="
-                                background:{TIER_COLORS['Tier 3 — External Support & Convergence']};
-                            "></i>
-                            Tier 3
-                        </span>
-                    </div>
-
-                    <div class="tier-counts">
-                        <div>
-                            <span class="num">{t1_count}</span>
-                            <span class="label">Tier 1 actions</span>
+                f"""<div class="card summary-compact">
+                        <div class="summary-title">
+                        <h3>{html.escape(str(summary_scope))} Summary</h3>
+                        <span>{scope_villages} villages · {total_actions} priority actions</span>
                         </div>
-
-                        <div>
-                            <span class="num">{t2_count}</span>
-                            <span class="label">Tier 2 actions</span>
+                        <div class="tier-bar"><div style="width:{widths[0]};background:{TIER_COLORS['Tier 1 — Community Led']};"></div><div style="width:{widths[1]};background:{TIER_COLORS['Tier 2 — Minor Support']};"></div><div style="width:{widths[2]};background:{TIER_COLORS['Tier 3 — External Support & Convergence']};"></div></div>
+                        <div class="tier-legend">
+                        <span><i class="legend-dot" style="background:{TIER_COLORS['Tier 1 — Community Led']};"></i>Tier 1</span>
+                        <span><i class="legend-dot" style="background:{TIER_COLORS['Tier 2 — Minor Support']};"></i>Tier 2</span>
+                        <span><i class="legend-dot" style="background:{TIER_COLORS['Tier 3 — External Support & Convergence']};"></i>Tier 3</span>
                         </div>
-
-                        <div>
-                            <span class="num">{t3_count}</span>
-                            <span class="label">Tier 3 actions</span>
+                        <div class="tier-counts">
+                        <div><span class="num">{t1_count}</span><span class="label">Tier 1 actions</span></div>
+                        <div><span class="num">{t2_count}</span><span class="label">Tier 2 actions</span></div>
+                        <div><span class="num">{t3_count}</span><span class="label">Tier 3 actions</span></div>
                         </div>
-                    </div>
-                </div>
-                """,
+                        </div>""",
                 unsafe_allow_html=True,
             )
 
