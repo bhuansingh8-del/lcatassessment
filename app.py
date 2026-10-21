@@ -11,6 +11,8 @@ from typing import Any, Dict, List, Optional
 from plotly.subplots import make_subplots
 import textwrap
 
+APP_DIR = os.path.dirname(os.path.abspath(__file__))
+
 # Optional Plotly click-event component. The dashboard remains usable if it is absent.
 try:
     from streamlit_plotly_events import plotly_events
@@ -588,10 +590,85 @@ footer {{
     .lcat-header {{ margin-left:-14px; margin-right:-14px; }}
     .breadcrumb {{ margin-left:-14px; margin-right:-14px; }}
 }}
-</style>
 """,
     unsafe_allow_html=True,
 )
+st.markdown("""
+<style>
+.value-chain-wrap {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 10px;
+    align-items: flex-start;
+}
+
+.value-chain-pill {
+    display: inline-flex;
+    align-items: center;
+    max-width: 100%;
+    padding: 5px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1.35;
+    white-space: normal;
+    overflow-wrap: break-word;
+    word-break: normal;
+}
+
+.value-chain-pill.primary {
+    background: #3E6B47;
+    color: #FCFBF6;
+    border: 1px solid #3E6B47;
+}
+
+.value-chain-pill.secondary {
+    background: #FCFBF6;
+    color: #3E6B47;
+    border: 1px solid #C9C2AC;
+}
+
+.secondary-chain-wrap {
+    margin-top: 8px;
+}
+
+.summary-compact {
+    padding: 10px 12px;
+}
+
+.summary-compact .summary-title h3 {
+    font-size: 12px !important;
+}
+
+.summary-compact .summary-title span {
+    font-size: 9px;
+}
+
+.summary-compact .tier-bar {
+    height: 12px;
+    margin: 8px 0 6px;
+}
+
+.summary-compact .tier-legend {
+    gap: 8px;
+    font-size: 9px;
+}
+
+.summary-compact .tier-counts {
+    gap: 14px;
+    margin-top: 8px;
+}
+
+.summary-compact .tier-counts .num {
+    font-size: 15px;
+}
+
+.summary-compact .tier-counts .label {
+    font-size: 9px;
+}
+</style>
+""", unsafe_allow_html=True)
 
 
 # =============================================================================
@@ -624,6 +701,35 @@ def normalize_text(value: Any) -> str:
         return ""
     return str(value).strip()
 
+
+def split_value_chain_items(value: Any) -> List[str]:
+    """Split comma-separated value chains without splitting inside parentheses."""
+    text_value = normalize_text(value)
+    items: List[str] = []
+    current: List[str] = []
+    depth = 0
+
+    for char in text_value:
+        if char == "(":
+            depth += 1
+        elif char == ")" and depth > 0:
+            depth -= 1
+
+        if char == "," and depth == 0:
+            item = "".join(current).strip()
+            if item:
+                items.append(item)
+            current = []
+        else:
+            current.append(char)
+
+    final_item = "".join(current).strip()
+    if final_item:
+        items.append(final_item)
+
+    return items
+
+
 def canonical_village_key(value: Any) -> str:
     if pd.isna(value):
         return ""
@@ -637,7 +743,7 @@ def canonical_village_key(value: Any) -> str:
     )
 
     # Remove punctuation and whitespace for controlled comparisons.
-    v = re.sub(r"[^a-zA-Z0-9]", "", v)
+    v = re.sub(r"[\W_]", "", v, flags=re.UNICODE)
 
     return v.casefold()
 
@@ -731,7 +837,7 @@ def find_column(df: pd.DataFrame, candidates: List[str]) -> Optional[str]:
 # =============================================================================
 @st.cache_data(show_spinner=False)
 def load_gpdp_data() -> pd.DataFrame:
-    workbook = "data/GPDP_Action_Plans_Themed_v2_Pillars.xlsx"
+    workbook = os.path.join(APP_DIR, "data", "GPDP_Action_Plans_Themed_v2_Pillars.xlsx")
 
     if os.path.exists(workbook):
         frames = []
@@ -789,7 +895,45 @@ def load_gpdp_data() -> pd.DataFrame:
     )
     return pd.DataFrame()
 
+@st.cache_data(show_spinner=False)
+def load_green_value_chains() -> pd.DataFrame:
+    app_dir = os.path.dirname(os.path.abspath(__file__))
+    path = os.path.join(
+        app_dir,
+        "data",
+        "green_value_chains",
+        "Green value Chains.xlsx",
+    )
 
+    if not os.path.exists(path):
+        st.warning(f"Green Value Chains workbook was not found: {path}")
+        return pd.DataFrame()
+
+    try:
+        df = pd.read_excel(path)
+        df.columns = [str(col).strip() for col in df.columns]
+
+        required = ["State", "District", "Green Value Chains"]
+        if any(col not in df.columns for col in required):
+            st.warning(
+                "Green Value Chains workbook has unexpected column names."
+            )
+            return pd.DataFrame()
+
+        for col in required:
+            df[col] = (
+                df[col]
+                .fillna("")
+                .astype(str)
+                .str.strip()
+            )
+
+        return df
+
+    except Exception as exc:
+        st.warning(f"Could not read Green Value Chains workbook: {exc}")
+        return pd.DataFrame()
+    
 @st.cache_data(show_spinner=False)
 def build_village_summary(df: pd.DataFrame) -> pd.DataFrame:
     required = ["State", "District", "Block", "Panchayat/Village"]
@@ -1001,7 +1145,7 @@ def get_physical_condition_record(
 
 @st.cache_data(show_spinner=False)
 def load_climate_data() -> pd.DataFrame:
-    path = "data/climate_vulnerability/climate_vulnerability_results.csv"
+    path = os.path.join(APP_DIR, "data", "climate_vulnerability", "climate_vulnerability_results.csv")
     if not os.path.exists(path):
         return pd.DataFrame()
 
@@ -1404,26 +1548,15 @@ def get_human_pressure_record(
 
     return None
 
-@st.cache_data(show_spinner=False)
-def load_climate_data() -> pd.DataFrame:
-    path = "data/climate_vulnerability/climate_vulnerability_results.csv"
-    if not os.path.exists(path):
-        return pd.DataFrame()
-
-    try:
-        df = pd.read_csv(path)
-        df.columns = df.columns.str.strip().str.lower()
-        return df
-    except Exception as exc:
-        st.error(f"Error reading climate CSV: {exc}")
-        return pd.DataFrame()
+# Duplicate load_climate_data() implementation removed.
+# Climate Signals uses the authoritative loader defined in Section 4.
 
 # =============================================================================
 # 5. VERBATIM DATA
 # =============================================================================
 @st.cache_data(show_spinner=False)
 def load_verbatim_data() -> pd.DataFrame:
-    path = "data/lcat/LCAT_Verbatim_Quote_Classification.xlsx"
+    path = os.path.join(APP_DIR, "data", "lcat", "LCAT_Verbatim_Quote_Classification.xlsx")
     if not os.path.exists(path):
         return pd.DataFrame()
 
@@ -1454,7 +1587,7 @@ def load_verbatim_data() -> pd.DataFrame:
 # =============================================================================
 @st.cache_data(show_spinner=False)
 def load_trajectory_data() -> pd.DataFrame:
-    path = "data/District Wise LCAT.xlsx"
+    path = os.path.join(APP_DIR, "data", "District Wise LCAT.xlsx")
     if not os.path.exists(path):
         return pd.DataFrame()
 
@@ -1545,6 +1678,7 @@ def make_map(
     )
 
     tile_dict = {
+        "CartoDB Positron": "CartoDB positron",
         "OpenStreetMap": "OpenStreetMap",
         "CartoDB Dark": "CartoDB dark_matter",
     }
@@ -1856,7 +1990,7 @@ The score is normalized to 0–1 for village-level comparison.
 }
 
 OVERALL_METHODOLOGY = """
-**Overall vulnerability Score**
+**Overall condition score**
 
 The dashboard combines the four condition dimensions using
 equal weights:
@@ -1881,6 +2015,167 @@ df_vegetation = load_vegetation_condition_data()
 df_human = load_human_pressure_data()
 df_water = load_water_condition_data()
 df_target = load_target_villages()
+df_green_value_chains = load_green_value_chains()
+def _score_geo_key(value: Any) -> str:
+    value = normalize_text(value)
+    value = value.replace("–", "-").replace("—", "-")
+    return re.sub(r"\s+", " ", value).casefold()
+
+
+def calculate_village_overall_score(
+    state: str,
+    district: str,
+    block: str,
+    village: str,
+) -> float:
+
+    physical_record = get_physical_condition_record(
+        df_physical, state, district, block, village
+    )
+
+    vegetation_record = get_vegetation_condition_record(
+        df_vegetation, state, district, block, village
+    )
+
+    water_record = get_water_condition_record(
+        df_water, state, district, block, village
+    )
+
+    human_record = get_human_pressure_record(
+        df_human, state, village
+    )
+
+    physical_value = (
+        float(physical_record["physical_score"])
+        if physical_record is not None
+        and pd.notna(physical_record["physical_score"])
+        else np.nan
+    )
+
+    vegetation_raw = (
+        float(vegetation_record["Vegetation Score (0-100)"])
+        if vegetation_record is not None
+        and pd.notna(vegetation_record["Vegetation Score (0-100)"])
+        else np.nan
+    )
+
+    # The overall methodology uses 0–1 component scores.
+    # Convert vegetation from 0–100 only when the source actually
+    # contains percentage-scale scores.
+    vegetation_scale = 1.0
+
+    if (
+        not df_vegetation.empty
+        and "Vegetation Score (0-100)" in df_vegetation.columns
+        and df_vegetation["Vegetation Score (0-100)"].max(skipna=True) > 1
+    ):
+        vegetation_scale = 100.0
+
+    vegetation_value = (
+        vegetation_raw / vegetation_scale
+        if np.isfinite(vegetation_raw)
+        else np.nan
+    )
+
+    hydrological_value = (
+        float(water_record["water_condition_overall"])
+        if water_record is not None
+        and pd.notna(water_record["water_condition_overall"])
+        else np.nan
+    )
+
+    human_raw_value = (
+        float(human_record["human_pressure_score"])
+        if human_record is not None
+        and pd.notna(human_record["human_pressure_score"])
+        else np.nan
+    )
+
+    anthropogenic_value = (
+        1.0 - human_raw_value
+        if np.isfinite(human_raw_value)
+        else np.nan
+    )
+
+    components = [
+        physical_value,
+        vegetation_value,
+        hydrological_value,
+        anthropogenic_value,
+    ]
+
+    # Follow the existing methodology: all four components must exist.
+    if not all(np.isfinite(value) for value in components):
+        return np.nan
+
+    return float(np.mean(components))
+
+def calculate_scope_mean_overall_score(
+    selected_state: str,
+    selected_district: str,
+    selected_block: str,
+) -> tuple[float, int, int]:
+
+    # Prefer the canonical list of 59 target villages.
+    if not df_target.empty:
+        candidates = df_target[
+            ["state", "district", "block", "village"]
+        ].copy()
+
+    else:
+        # Fallback if the canonical village workbook is unavailable.
+        candidates = df_villages[
+            ["state", "district", "block", "name"]
+        ].rename(columns={"name": "village"}).copy()
+
+    if candidates.empty:
+        return np.nan, 0, 0
+
+    # Filter the actual geographic selection.
+    if selected_state != "Unknown":
+        candidates = candidates[
+            candidates["state"].map(_score_geo_key)
+            == _score_geo_key(selected_state)
+        ]
+
+    if selected_district != "All Districts":
+        candidates = candidates[
+            candidates["district"].map(_score_geo_key)
+            == _score_geo_key(selected_district)
+        ]
+
+    if selected_block != "All Blocks":
+        candidates = candidates[
+            candidates["block"].map(_score_geo_key)
+            == _score_geo_key(selected_block)
+        ]
+
+    candidates = candidates[
+        candidates["village"].map(normalize_text) != ""
+    ].drop_duplicates(
+        subset=["state", "district", "block", "village"]
+    )
+
+    village_scores = []
+
+    for _, row in candidates.iterrows():
+        score = calculate_village_overall_score(
+            normalize_text(row["state"]),
+            normalize_text(row["district"]),
+            normalize_text(row["block"]),
+            normalize_text(row["village"]),
+        )
+
+        if np.isfinite(score):
+            village_scores.append(score)
+
+    mean_score = (
+        float(np.mean(village_scores))
+        if village_scores
+        else np.nan
+    )
+
+    return mean_score, len(village_scores), len(candidates)
 available_states = (
     sorted(df_villages["state"].dropna().unique().tolist())
     if not df_villages.empty else []
@@ -2209,7 +2504,7 @@ if dashboard_mode == "LCAT & GPDP":
             <div class="card">
                 <div class="map-title">
                     <h2>{html.escape(map_title)}</h2>
-                    <span>LCAT village demand view · current selection</span>
+                    <span>LCAT village demand view · illustrative village positions</span>
                 </div>
             </div>
             """,
@@ -2307,32 +2602,182 @@ if dashboard_mode == "LCAT & GPDP":
         else:
             widths = ["0%", "0%", "0%"]
 
-        st.markdown(
-            f"""
-            <div class="card" style="margin-top:14px;">
-                <div class="summary-title">
-                    <h3>{html.escape(str(summary_scope))} Summary</h3>
-                    <span>{scope_villages} villages · {total_actions} priority actions</span>
-                </div>
-                <div class="tier-bar">
-                    <div style="width:{widths[0]};background:{TIER_COLORS['Tier 1 — Community Led']};"></div>
-                    <div style="width:{widths[1]};background:{TIER_COLORS['Tier 2 — Minor Support']};"></div>
-                    <div style="width:{widths[2]};background:{TIER_COLORS['Tier 3 — External Support & Convergence']};"></div>
-                </div>
-                <div class="tier-legend">
-                    <span><i class="legend-dot" style="background:{TIER_COLORS['Tier 1 — Community Led']};"></i>Tier 1</span>
-                    <span><i class="legend-dot" style="background:{TIER_COLORS['Tier 2 — Minor Support']};"></i>Tier 2</span>
-                    <span><i class="legend-dot" style="background:{TIER_COLORS['Tier 3 — External Support & Convergence']};"></i>Tier 3</span>
-                </div>
-                <div class="tier-counts">
-                    <div><span class="num">{t1_count}</span><span class="label">Tier 1 actions</span></div>
-                    <div><span class="num">{t2_count}</span><span class="label">Tier 2 actions</span></div>
-                    <div><span class="num">{t3_count}</span><span class="label">Tier 3 actions</span></div>
-                </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
+        # GREEN VALUE CHAINS + COMPACT SUMMARY
+        value_chain_col, summary_col = st.columns(
+            [1.15, 1.0],
+            gap="small",
         )
+
+        # =============================================================
+        # LEFT PANEL: GREEN VALUE CHAINS
+        # =============================================================
+        with value_chain_col:
+
+            chains_row = pd.DataFrame()
+
+            if (
+                not df_green_value_chains.empty
+                and selected_district != "All Districts"
+            ):
+                state_mask = (
+                    df_green_value_chains["State"]
+                    .str.casefold()
+                    == selected_state.casefold()
+                )
+
+                district_mask = (
+                    df_green_value_chains["District"]
+                    .str.casefold()
+                    == selected_district.casefold()
+                )
+
+                chains_row = df_green_value_chains.loc[
+                    state_mask & district_mask
+                ]
+
+            if chains_row.empty:
+                chain_body = (
+                    "<p class='subtle-note'>"
+                    "Select a district with Green Value Chains data."
+                    "</p>"
+                )
+            else:
+                chain_text = normalize_text(
+                    chains_row.iloc[0]["Green Value Chains"]
+                )
+
+                groups = chain_text.split(";", maxsplit=1)
+
+                primary_items = split_value_chain_items(groups[0])
+
+                secondary_items = (
+                    split_value_chain_items(groups[1])
+                    if len(groups) > 1
+                    else []
+                )
+
+                primary_html = "".join(
+                    '<span class="value-chain-pill primary">'
+                    + html.escape(item)
+                    + "</span>"
+                    for item in primary_items
+                )
+
+                secondary_html = "".join(
+                    '<span class="value-chain-pill secondary">'
+                    + html.escape(item)
+                    + "</span>"
+                    for item in secondary_items
+                )
+
+                chain_body = (
+                    '<div class="value-chain-wrap">'
+                    + primary_html
+                    + "</div>"
+                )
+
+                if secondary_html:
+                    chain_body += (
+                        '<div class="value-chain-wrap '
+                        'secondary-chain-wrap">'
+                        + secondary_html
+                        + "</div>"
+                    )
+
+            st.markdown(
+                f"""
+                <div class="card">
+                    <div class="summary-title">
+                        <h3>Green Value Chains</h3>
+                        <span>
+                            {html.escape(selected_district)}
+                        </span>
+                    </div>
+                    {chain_body}
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+        # =============================================================
+        # RIGHT PANEL: COMPACT TIER SUMMARY
+        # =============================================================
+        with summary_col:
+
+            st.markdown(
+                f"""
+                <div class="card summary-compact">
+                    <div class="summary-title">
+                        <h3>
+                            {html.escape(str(summary_scope))}
+                            Summary
+                        </h3>
+                        <span>
+                            {scope_villages} villages ·
+                            {total_actions} priority actions
+                        </span>
+                    </div>
+
+                    <div class="tier-bar">
+                        <div style="
+                            width:{widths[0]};
+                            background:{TIER_COLORS['Tier 1 — Community Led']};
+                        "></div>
+
+                        <div style="
+                            width:{widths[1]};
+                            background:{TIER_COLORS['Tier 2 — Minor Support']};
+                        "></div>
+
+                        <div style="
+                            width:{widths[2]};
+                            background:{TIER_COLORS['Tier 3 — External Support & Convergence']};
+                        "></div>
+                    </div>
+
+                    <div class="tier-legend">
+                        <span>
+                            <i class="legend-dot" style="
+                                background:{TIER_COLORS['Tier 1 — Community Led']};
+                            "></i>
+                            Tier 1
+                        </span>
+
+                        <span>
+                            <i class="legend-dot" style="
+                                background:{TIER_COLORS['Tier 2 — Minor Support']};
+                            "></i>
+                            Tier 2
+                        </span>
+
+                        <span>
+                            <i class="legend-dot" style="
+                                background:{TIER_COLORS['Tier 3 — External Support & Convergence']};
+                            "></i>
+                            Tier 3
+                        </span>
+                    </div>
+
+                    <div class="tier-counts">
+                        <div>
+                            <span class="num">{t1_count}</span>
+                            <span class="label">Tier 1 actions</span>
+                        </div>
+
+                        <div>
+                            <span class="num">{t2_count}</span>
+                            <span class="label">Tier 2 actions</span>
+                        </div>
+
+                        <div>
+                            <span class="num">{t3_count}</span>
+                            <span class="label">Tier 3 actions</span>
+                        </div>
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
 
     # -------------------------------------------------------------------------
     # RIGHT PROFILE
@@ -2397,10 +2842,24 @@ if dashboard_mode == "LCAT & GPDP":
             selected_village,
         )
 
-        veg_value = (
+        veg_raw_value = (
             float(veg_record["Vegetation Score (0-100)"])
             if veg_record is not None
             and pd.notna(veg_record["Vegetation Score (0-100)"])
+            else np.nan
+        )
+
+        vegetation_scale = 1.0
+        if (
+            not df_vegetation.empty
+            and "Vegetation Score (0-100)" in df_vegetation.columns
+            and df_vegetation["Vegetation Score (0-100)"].max(skipna=True) > 1
+        ):
+            vegetation_scale = 100.0
+
+        veg_value = (
+            veg_raw_value / vegetation_scale
+            if np.isfinite(veg_raw_value)
             else np.nan
         )
 
@@ -2483,18 +2942,39 @@ if dashboard_mode == "LCAT & GPDP":
         else:
             overall_value = np.nan
 
+        score_note = "Combined condition score"
+
+        # When no individual village is selected, display the mean
+        # of village-level overall scores for the chosen district/block.
+        if (
+            selected_village == "All Villages"
+            and selected_district != "All Districts"
+        ):
+            (
+                overall_value,
+                scored_village_count,
+                candidate_village_count,
+            ) = calculate_scope_mean_overall_score(
+                selected_state,
+                selected_district,
+                selected_block,
+            )
+
+            score_note = (
+                f"Mean of {scored_village_count} scored villages out of {candidate_village_count}"
+            )
+
         overall_display = (
             f"{overall_value:.2f}"
             if np.isfinite(overall_value)
             else "NaN"
         )
-
         overall_color = (
             get_score_color(overall_value)
             if np.isfinite(overall_value)
             else "#C9C2AC"
         )
-        overall_col, overall_info_col = st.columns([0.97, 0.03], gap="small")
+        overall_col, overall_info_col = st.columns([0.90, 0.10], gap="small")
 
         with overall_col:
             st.markdown(
@@ -2505,8 +2985,8 @@ if dashboard_mode == "LCAT & GPDP":
                         <span>{overall_display}</span>
                     </div>
                     <div class="score-copy">
-                        <strong>Overall vulnerability score</strong>
-                        <small>Combined condition score</small>
+                        <strong>Overall condition score</strong>
+                        <small>{html.escape(score_note)}</small>
                     </div>
                 </div>
                 """,
@@ -2518,7 +2998,7 @@ if dashboard_mode == "LCAT & GPDP":
                 "",
                 icon=":material/info:",
                 type="tertiary",
-                help="How the Overall vulnerability score is calculated",
+                help="How the Overall condition score is calculated",
                 width="content",
             ):
                 st.markdown(
@@ -2589,7 +3069,7 @@ if dashboard_mode == "LCAT & GPDP":
                 width = 0
                 color = "#C9C2AC"
                 
-            score_row_left, score_row_info = st.columns([0.97, 0.03], gap="small")
+            score_row_left, score_row_info = st.columns([0.90, 0.10], gap="small")
 
             with score_row_left:
                 st.markdown(
@@ -2777,11 +3257,14 @@ if dashboard_mode == "LCAT & GPDP":
                     with col:
                         status_raw = normalize_text(row.get(theme, "Unknown"))
                         
-                        status_key = "Unknown"
-                        for k in trajectory_style.keys():
-                            if k.lower() in status_raw.lower():
-                                status_key = k
-                                break
+                        status_lookup = {
+                            key.casefold(): key
+                            for key in trajectory_style
+                        }
+                        status_key = status_lookup.get(
+                            status_raw.casefold(),
+                            "Unknown",
+                        )
                         
                         style = trajectory_style[status_key]
                         display_status = status_key if status_key != "Unknown" else "Unknown"
@@ -2995,9 +3478,27 @@ else:
                 st.markdown("<div class='section-label'>Canopy Moisture — NDMI</div>", unsafe_allow_html=True)
                 ndmi_cols = st.columns(3)
                 ndmi_files = [
-                    ("2001–2010 Baseline", f"data/climate_vulnerability/imagery/{dist_clean}_ndmi_baseline.png"),
-                    ("2015–2024 Recent", f"data/climate_vulnerability/imagery/{dist_clean}_ndmi_recent.png"),
-                    ("Change", f"data/climate_vulnerability/imagery/{dist_clean}_ndmi_change.png"),
+                    (
+                        "2001–2010 Baseline",
+                        os.path.join(
+                            APP_DIR, "data", "climate_vulnerability", "imagery",
+                            f"{dist_clean}_ndmi_baseline.png",
+                        ),
+                    ),
+                    (
+                        "2015–2024 Recent",
+                        os.path.join(
+                            APP_DIR, "data", "climate_vulnerability", "imagery",
+                            f"{dist_clean}_ndmi_recent.png",
+                        ),
+                    ),
+                    (
+                        "Change",
+                        os.path.join(
+                            APP_DIR, "data", "climate_vulnerability", "imagery",
+                            f"{dist_clean}_ndmi_change.png",
+                        ),
+                    ),
                 ]
                 for col, (label, path) in zip(ndmi_cols, ndmi_files):
                     with col:
@@ -3022,9 +3523,27 @@ else:
                 st.markdown("<div class='section-label'>Thermal Stress — LST</div>", unsafe_allow_html=True)
                 lst_cols = st.columns(3)
                 lst_files = [
-                    ("2001–2010 Baseline", f"data/climate_vulnerability/imagery/{dist_clean}_lst_baseline.png"),
-                    ("2015–2024 Recent", f"data/climate_vulnerability/imagery/{dist_clean}_lst_recent.png"),
-                    ("Change", f"data/climate_vulnerability/imagery/{dist_clean}_lst_change.png"),
+                    (
+                        "2001–2010 Baseline",
+                        os.path.join(
+                            APP_DIR, "data", "climate_vulnerability", "imagery",
+                            f"{dist_clean}_lst_baseline.png",
+                        ),
+                    ),
+                    (
+                        "2015–2024 Recent",
+                        os.path.join(
+                            APP_DIR, "data", "climate_vulnerability", "imagery",
+                            f"{dist_clean}_lst_recent.png",
+                        ),
+                    ),
+                    (
+                        "Change",
+                        os.path.join(
+                            APP_DIR, "data", "climate_vulnerability", "imagery",
+                            f"{dist_clean}_lst_change.png",
+                        ),
+                    ),
                 ]
                 for col, (label, path) in zip(lst_cols, lst_files):
                     with col:
